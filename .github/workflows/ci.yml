@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      # Builds the packages and fails if any is over its gzip budget (.size-limit.json).
+      - run: pnpm size
+      # Incremental painting (scroll blits, dirty cells) must match a full repaint pixel for pixel.
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+
+  bench:
+    # Frame-time numbers from shared runners are noisy; run on demand and keep the report.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'bench')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @falcon-grid/bench exec playwright install --with-deps chromium
+      - run: pnpm bench --target falcon --out bench/results/ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-report
+          path: bench/results/ci

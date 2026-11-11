@@ -1,0 +1,20 @@
+{
+  "name": "@falcon-grid/playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/datagen": "workspace:*",
+    "@falcon-grid/text": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.3.8"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "falcon-grid-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/**\" --filter \"./tools/**\" run build",
+    "typecheck": "pnpm -r run typecheck && tsc -p e2e/tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "size": "pnpm build && size-limit",
+    "dev": "pnpm --filter @falcon-grid/playground dev",
+    "bench": "pnpm --filter @falcon-grid/bench run bench",
+    "check": "pnpm typecheck && pnpm test && pnpm size",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/datagen": "workspace:*",
+    "@falcon-grid/text": "workspace:*",
+    "@playwright/test": "1.49.1",
+    "@size-limit/preset-small-lib": "^11.2.0",
+    "@types/node": "^24.19.2",
+    "fast-check": "^4.3.0",
+    "size-limit": "^11.2.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.8",
+    "vitest": "^3.2.7"
+  }
+}

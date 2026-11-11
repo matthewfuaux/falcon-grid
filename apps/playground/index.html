@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Falcon Grid Playground</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong>falcon-grid</strong>
+      <label>Rows
+        <select id="rows">
+          <option value="1000">1,000</option>
+          <option value="100000">100,000</option>
+          <option value="1000000" selected>1,000,000</option>
+          <option value="10000000">10,000,000</option>
+        </select>
+      </label>
+      <label>Columns
+        <select id="cols">
+          <option value="10">10</option>
+          <option value="100" selected>100</option>
+          <option value="500">500</option>
+        </select>
+      </label>
+      <label>Frozen cols <input id="frozenCols" type="number" min="0" max="10" value="1" /></label>
+      <label>Frozen rows <input id="frozenRows" type="number" min="0" max="10" value="0" /></label>
+      <label>Theme
+        <select id="theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="striped">Striped</option>
+        </select>
+      </label>
+      <label><input id="wrap" type="checkbox" /> Wrap text (auto row height)</label>
+      <label>Wrapped width
+        <input id="wrapWidth" type="range" min="120" max="600" value="320" />
+      </label>
+      <label><input id="stream" type="checkbox" /> Stream 1,000 updates/s</label>
+      <button id="jump" type="button">Jump to end</button>
+      <output id="stats" class="stats"></output>
+    </header>
+    <main id="grid" class="grid"></main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

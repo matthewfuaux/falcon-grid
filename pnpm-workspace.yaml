@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - tools/*
+  - apps/*
+  - bench
+autoInstallPeers: false
+strictPeerDependencies: false
+onlyBuiltDependencies:
+  - esbuild

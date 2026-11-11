@@ -1,0 +1,33 @@
+{
+  "name": "@falcon-grid/bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "tsx src/run.ts",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/datagen": "workspace:*",
+    "@falcon-grid/text": "workspace:*",
+    "@glideapps/glide-data-grid": "6.0.3",
+    "@tanstack/react-table": "8.21.3",
+    "@tanstack/react-virtual": "3.14.26",
+    "@visactor/vtable": "1.26.8",
+    "lodash": "^4.17.21",
+    "marked": "^4.3.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-responsive-carousel": "^3.2.23"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "playwright": "1.49.1",
+    "tsx": "^4.20.6",
+    "vite": "^7.3.8"
+  }
+}

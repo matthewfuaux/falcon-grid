@@ -1,0 +1,19 @@
+[
+  {
+    "name": "@falcon-grid/core",
+    "path": "packages/core/dist/index.js",
+    "import": "*",
+    "limit": "25 kB",
+    "gzip": true
+  },
+  {
+    "name": "@falcon-grid/text (Pretext included, core excluded)",
+    "path": "packages/text/dist/index.js",
+    "import": "*",
+    "ignore": [
+      "@falcon-grid/core"
+    ],
+    "limit": "42 kB",
+    "gzip": true
+  }
+]

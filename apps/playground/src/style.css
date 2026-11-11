@@ -1,0 +1,71 @@
+:root {
+  color-scheme: light;
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --page-bg: #ffffff;
+  --page-fg: #1f2328;
+  --bar-bg: #f6f8fa;
+  --bar-border: #d1d9e0;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page-bg: #0d1117;
+  --page-fg: #e6edf3;
+  --bar-bg: #161b22;
+  --bar-border: #30363d;
+  /* Read by themeFromCSSVariables */
+  --fg-background: #0d1117;
+  --fg-foreground: #e6edf3;
+  --fg-header-background: #161b22;
+  --fg-header-foreground: #c9d1d9;
+  --fg-grid-line: #30363d;
+  --fg-frozen-divider: #6e7681;
+}
+
+:root[data-theme='striped'] {
+  --fg-row-alt-background: #f6f8fa;
+  --fg-row-height: 28px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--page-bg);
+  color: var(--page-fg);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--bar-border);
+}
+
+.toolbar input[type='number'] {
+  width: 4em;
+}
+
+.stats {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.grid {
+  flex: 1;
+  min-height: 0;
+}
