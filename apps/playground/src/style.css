@@ -20,6 +20,10 @@
   --fg-header-foreground: #c9d1d9;
   --fg-grid-line: #30363d;
   --fg-frozen-divider: #6e7681;
+  --fg-hover-background: rgba(230, 237, 243, 0.05);
+  --fg-selection-background: rgba(56, 139, 253, 0.2);
+  --fg-selection-border: rgba(56, 139, 253, 0.7);
+  --fg-focus-ring: #4493f8;
 }
 
 :root[data-theme='striped'] {

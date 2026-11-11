@@ -520,7 +520,7 @@ export class BasePainter {
       ctx.rect(clipLeft, r.y0, clipRight - clipLeft, r.y1 - r.y0);
       ctx.clip();
       for (let row = r.rowStart; row < r.rowEnd; row++) {
-        const v = getCell(row, c);
+        const v = getCell(row, c, columns[c]!);
         if (v == null || v === '') continue;
         const str = typeof v === 'string' ? v : String(v);
         const i = row - r.rowStart;

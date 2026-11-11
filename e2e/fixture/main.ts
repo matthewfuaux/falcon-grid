@@ -9,19 +9,35 @@ const wrap = q.has('wrap');
 const columns: ColumnDef[] = data.columns.map((c) =>
   wrap && (c.kind === 'medium' || c.kind === 'long') ? { ...c, wrap: true } : c,
 );
-const paintLog: (Pick<FrameInfo, 'paint' | 'blitX' | 'blitY' | 'flags' | 'rowsMeasured'> & { cells: number })[] = [];
+const paintLog: (Pick<FrameInfo, 'paint' | 'blitX' | 'blitY' | 'flags' | 'rowsMeasured' | 'overlay'> & { cells: number })[] = [];
+// Columns can be reordered, so data is looked up by column id.
+const dataCol = new Map(data.columns.map((c, i) => [c.id, i]));
+/** Events the grid fired, for interaction tests: [name, detail without the DOM event]. */
+const events: [string, Record<string, unknown>][] = [];
+const record = (name: string) => (e: { event: Event; column?: ColumnDef }) => {
+  const { event: _event, column, ...rest } = e as { event: Event; column?: ColumnDef } & Record<string, unknown>;
+  events.push([name, column ? { ...rest, column: column.id } : rest]);
+};
 
 const grid = createGrid(document.getElementById('root')!, {
   columns,
   rowCount: data.rowCount,
-  getCell: (r, c) => data.get(r, c),
+  getCell: (r, _c, column) => data.get(r, dataCol.get(column.id)!),
   frozenColumns: Number(q.get('frozenColumns') ?? 0),
   frozenRows: Number(q.get('frozenRows') ?? 0),
   rowSizing: wrap ? 'auto' : 'fixed',
   ...(wrap ? { textWrapper: createPretextWrapper() } : {}),
   theme: q.has('zebra') ? { rowAltBackground: '#f3f5f8', rowHeight: 27 } : {},
   onFrame: (f) =>
-    paintLog.push({ paint: f.paint, blitX: f.blitX, blitY: f.blitY, flags: f.flags, cells: f.cellsPainted, rowsMeasured: f.rowsMeasured }),
+    paintLog.push({
+      paint: f.paint, blitX: f.blitX, blitY: f.blitY, flags: f.flags, cells: f.cellsPainted, rowsMeasured: f.rowsMeasured, overlay: f.overlay,
+    }),
+  onCellClick: record('cellClick'),
+  onCellDoubleClick: record('cellDoubleClick'),
+  onHeaderClick: record('headerClick'),
+  onSelectionChange: record('selectionChange'),
+  onColumnResize: record('columnResize'),
+  onColumnReorder: record('columnReorder'),
 });
 
 /**
@@ -69,4 +85,4 @@ function fullRepaint() {
   grid.flush();
 }
 
-Object.assign(window, { grid, data, columns, paintLog, diffImages, fullRepaint, ready: true });
+Object.assign(window, { grid, data, columns, paintLog, events, diffImages, fullRepaint, ready: true });

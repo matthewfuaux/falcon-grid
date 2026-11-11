@@ -9,7 +9,8 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 | 0. Foundations: monorepo, CI, playground, benchmark harness | done        |
 | 1. Core renderer: fixed-height read-only table              | done        |
 | 2. Text engine and variable row heights                     | done        |
-| 3–7                                                         | not started |
+| 3. Interaction: selection, keyboard, resize, reorder, copy  | done        |
+| 4–7                                                         | not started |
 
 ## Layout
 
@@ -103,3 +104,27 @@ Spreadsheet features (formulas, fill handle, merged cells), pivoting and aggrega
 MIT
 
 claude --ide --resume 81f7fb3f-f518-4c04-8234-5d70d5c8145a
+
+## Interaction
+
+Hover, selection, the active cell and drag indicators are painted on a separate overlay canvas,
+so none of them repaint cells. The selection is a list of ranges (`store.selection`); the active
+cell (`store.activeCell`) is separate from it.
+
+- **Pointer:** click selects, Shift-click extends, Ctrl/Cmd-click adds a range, drag selects
+  (auto-scrolling at the edges). Header click selects columns. Touch scrolls natively; a tap
+  selects.
+- **Keyboard:** arrows, Page Up/Down, Home/End, with Ctrl/Cmd to jump to the edges and Shift to
+  extend. Tab and Shift+Tab move along rows (Tab leaves the grid at the last cell). Escape
+  collapses the selection, Ctrl/Cmd+A selects all, Ctrl+Space and Shift+Space select columns and
+  rows. The active cell always scrolls into view.
+- **Columns:** drag a header edge to resize (`minWidth`/`maxWidth`, default 32 and 2000),
+  double-click it to fit the header and the visible cells, drag a header to reorder. Escape
+  cancels a drag. Opt out per column with `resizable: false` or `reorderable: false`.
+- **Copy:** Ctrl/Cmd+C copies the selection as TSV and an HTML table.
+- **Events:** `onCellClick`, `onCellDoubleClick`, `onCellContextMenu`, `onHeaderClick`,
+  `onSelectionChange`, `onColumnResize`, `onColumnReorder`, each with the row and column and
+  the original DOM event.
+
+Reordering changes column indices, so `getCell(row, col, column)` also receives the column
+definition: look data up by `column.id` if columns can move.

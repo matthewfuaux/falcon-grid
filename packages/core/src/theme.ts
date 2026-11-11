@@ -17,6 +17,10 @@ export const defaultTheme: Theme = {
   lineHeight: 18,
   rowHeight: 32,
   headerHeight: 36,
+  hoverBackground: 'rgba(31, 35, 40, 0.04)',
+  selectionBackground: 'rgba(9, 105, 218, 0.12)',
+  selectionBorder: 'rgba(9, 105, 218, 0.6)',
+  focusRing: '#0969da',
 };
 
 export function mergeTheme(base: Theme, patch: Partial<Theme> | undefined): Theme {

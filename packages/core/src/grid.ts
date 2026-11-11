@@ -1,15 +1,20 @@
+import { selectionToClipboard } from './clipboard';
+import { colX, createHit, hitTest, rowY } from './hittest';
+import { attachInteraction, type InteractionHost } from './interaction';
 import { buildColumnOffsets, computeViewport, createViewportRange } from './layout';
+import { paintOverlay, type DragIndicator } from './overlay';
 import { BasePainter, MAX_DIRTY_AREAS, type DirtyCells, type PaintInput } from './painter';
 import { FixedRows, VariableRows, type RowModel } from './rows';
 import { ScrollAxis } from './scroll';
 import { Dirty, createScheduler, type FrameSource, type Scheduler } from './scheduler';
+import { clampRange } from './selection';
 import { createStore, type Store } from './store';
 import { createSurface, type Surface } from './surface';
 import { TextMeasurer, type TextWrapper } from './text';
 import { defaultTheme, mergeTheme, resolveTheme, type ResolvedTheme } from './theme';
-import type { ColumnDef, FrameInfo, GetCell, GridState, RowSizing, Theme } from './types';
+import type { CellRange, CellRef, ColumnDef, FrameInfo, GetCell, GridEvents, GridState, RowSizing, Theme } from './types';
 
-export interface GridOptions {
+export interface GridOptions extends GridEvents {
   columns: readonly ColumnDef[];
   rowCount: number;
   getCell: GetCell;
@@ -49,6 +54,16 @@ export interface Grid {
   visibleRows(): { start: number; end: number };
   /** Screen position of a row relative to the grid's top edge, or null if it is not on screen. */
   getRowBounds(row: number): { top: number; height: number } | null;
+  /** Replace the selection. The active cell is left alone unless given. */
+  setSelection(selection: readonly CellRange[], activeCell?: CellRef | null): void;
+  /** Scroll the least distance that brings a cell fully into view (frozen axes don't scroll). */
+  scrollToCell(row: number, col: number): void;
+  /** A cell's rectangle relative to the grid's top-left corner, unclipped, or null if out of range. */
+  getCellBounds(row: number, col: number): { x: number; y: number; width: number; height: number } | null;
+  /** The selection as TSV and an HTML table (what Ctrl+C copies), or null if nothing is selected. */
+  copySelection(): { text: string; html: string } | null;
+  /** Give the grid keyboard focus. */
+  focus(): void;
   /** Run pending work now instead of on the next frame. */
   flush(): void;
   destroy(): void;
@@ -79,7 +94,21 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     viewportHeight: 0,
     pixelRatio: 1,
     theme: mergeTheme(defaultTheme, options.theme),
+    selection: [],
+    activeCell: null,
+    hoverCell: null,
+    focused: false,
   });
+  const events: GridEvents = {};
+  const EVENT_KEYS = [
+    'onCellClick', 'onCellDoubleClick', 'onCellContextMenu', 'onHeaderClick',
+    'onSelectionChange', 'onColumnResize', 'onColumnReorder',
+  ] as const;
+  const setEvents = (o: GridEvents) => {
+    for (const k of EVENT_KEYS) if (k in o) (events as Record<string, unknown>)[k] = o[k];
+  };
+  setEvents(options);
+  let drag: DragIndicator = { kind: 'none' };
 
   let offsets = buildColumnOffsets(options.columns);
   let offsetsFor: readonly ColumnDef[] = options.columns;
@@ -90,6 +119,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   const text = new TextMeasurer();
   const info: FrameInfo = {
     frame: 0, flags: 0, durationMs: 0, cellsPainted: 0, paint: 'none', blitX: 0, blitY: 0, rowsMeasured: 0,
+    overlay: false,
   };
   const dirty: DirtyCells = { cells: new Int32Array(MAX_DIRTY_AREAS * 2), count: 0 };
   const axisX = new ScrollAxis();
@@ -124,6 +154,22 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   const contentWidth = () => offsets[offsets.length - 1]!;
   const contentHeight = (s: GridState) => s.theme.headerHeight + rows.total;
   const frozenRowsOf = (s: GridState) => Math.min(Math.max(0, s.frozenRows), rows.count);
+
+  const viewportOf = (s: GridState, out: typeof vp) =>
+    computeViewport(
+      {
+        offsets: currentOffsets(),
+        rows,
+        headerHeight: s.theme.headerHeight,
+        frozenColumns: s.frozenColumns,
+        frozenRows: s.frozenRows,
+        scrollLeft: s.scrollLeft,
+        scrollTop: s.scrollTop,
+        width: s.viewportWidth,
+        height: s.viewportHeight,
+      },
+      out,
+    );
 
   const publishScroll = () => store.setState({ scrollLeft: axisX.virtual, scrollTop: axisY.virtual });
 
@@ -185,7 +231,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     let lines = 1;
     if (wrapper) {
       for (const c of wrapped) {
-        const v = getCell(row, c);
+        const v = getCell(row, c, s.columns[c]!);
         if (v == null || v === '') continue;
         const avail = offsets[c + 1]! - offsets[c]! - 2 * t.cellPaddingX;
         if (avail <= 0) continue;
@@ -421,6 +467,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     info.paint = 'none';
     info.blitX = info.blitY = 0;
     info.rowsMeasured = 0;
+    info.overlay = false;
     const canPaint = s.viewportWidth > 0 && s.viewportHeight > 0 && surface.backingWidth > 0;
     if (canPaint && variable) {
       info.rowsMeasured = measureVisible();
@@ -428,21 +475,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       if (info.rowsMeasured > 0) flags |= Dirty.Scroll;
       s = store.getSnapshot();
     }
+    if (canPaint && flags & (Dirty.Base | Dirty.Cells | Dirty.Scroll | Dirty.Overlay)) viewportOf(s, vp);
     if (canPaint && flags & (Dirty.Base | Dirty.Cells | Dirty.Scroll)) {
-      computeViewport(
-        {
-          offsets,
-          rows,
-          headerHeight: s.theme.headerHeight,
-          frozenColumns: s.frozenColumns,
-          frozenRows: s.frozenRows,
-          scrollLeft: s.scrollLeft,
-          scrollTop: s.scrollTop,
-          width: s.viewportWidth,
-          height: s.viewportHeight,
-        },
-        vp,
-      );
       input.ctx = surface.base;
       input.dpr = surface.backingWidth / s.viewportWidth;
       input.columns = s.columns;
@@ -462,10 +496,22 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       info.blitY = result.blitY;
     }
     if (canPaint && flags & Dirty.Overlay) {
-      // Nothing to draw on the overlay yet; keep the layer clear.
-      const o = surface.overlay;
-      o.setTransform(1, 0, 0, 1, 0, 0);
-      o.clearRect(0, 0, surface.overlayCanvas.width, surface.overlayCanvas.height);
+      paintOverlay({
+        ctx: surface.overlay,
+        dpr: surface.backingWidth / s.viewportWidth,
+        width: surface.overlayCanvas.width,
+        height: surface.overlayCanvas.height,
+        vp,
+        offsets,
+        rows,
+        theme: s.theme,
+        selection: s.selection,
+        activeCell: s.activeCell,
+        hoverCell: s.hoverCell,
+        focused: s.focused,
+        drag,
+      });
+      info.overlay = true;
     }
     if (variable) scheduleIdle();
     if (onFrame) {
@@ -477,6 +523,104 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   };
 
   const scheduler: Scheduler = createScheduler(run, options.frameSource);
+
+  // ---- Interaction ----------------------------------------------------------------------------
+
+  /** Column offsets for the columns in the store, even before the next layout. */
+  const currentOffsets = () => {
+    const s = store.getSnapshot();
+    if (offsetsFor !== s.columns) {
+      offsets = buildColumnOffsets(s.columns, offsets);
+      offsetsFor = s.columns;
+    }
+    return offsets;
+  };
+
+  /** Viewport geometry from the store as it is now (pointer input runs between frames). */
+  const liveVp = createViewportRange();
+  const live = () => {
+    viewportOf(store.getSnapshot(), liveVp);
+    return liveVp;
+  };
+  const hit = createHit();
+
+  const scrollToCell = (row: number, col: number) => {
+    const s = store.getSnapshot();
+    const v = live();
+    const pos: { left?: number; top?: number } = {};
+    if (col >= v.frozenColumns && col < s.columns.length) {
+      const left = offsets[col]!;
+      const right = offsets[col + 1]!;
+      if (left - s.scrollLeft < v.frozenWidth) pos.left = left - v.frozenWidth;
+      else if (right - s.scrollLeft > s.viewportWidth) pos.left = Math.min(left - v.frozenWidth, right - s.viewportWidth);
+    }
+    if (row >= v.frozenRows && row < rows.count) {
+      const top = rows.offsetOf(row);
+      const bottom = top + rows.heightOf(row);
+      const frozenHeight = v.bodyTop - v.headerHeight;
+      const visible = s.viewportHeight - s.theme.headerHeight;
+      if (top - s.scrollTop < frozenHeight) pos.top = top - frozenHeight;
+      else if (bottom - s.scrollTop > visible) pos.top = Math.min(top - frozenHeight, bottom - visible);
+    }
+    if (pos.left !== undefined || pos.top !== undefined) api.scrollTo(pos);
+  };
+
+  const copySelection = () => {
+    const s = store.getSnapshot();
+    const a = s.activeCell;
+    const source = s.selection.length > 0 ? s.selection : a ? [{ top: a.row, left: a.col, bottom: a.row, right: a.col }] : [];
+    const ranges = source.map((r) => clampRange(r, s.rowCount, s.columns.length)).filter((r) => r !== null);
+    return ranges.length > 0 ? selectionToClipboard(ranges, getCell, s.columns) : null;
+  };
+
+  const host: InteractionHost = {
+    element: surface.scroller,
+    store,
+    events,
+    hitTest: (x, y) => hitTest(x, y, live(), offsets, rows, store.getSnapshot().columns, hit),
+    viewport: () => ({ vp: live(), offsets, rows }),
+    scrollBy(dx, dy) {
+      const s = store.getSnapshot();
+      api.scrollTo({ left: s.scrollLeft + dx, top: s.scrollTop + dy });
+    },
+    scrollCellIntoView: ({ row, col }) => scrollToCell(row, col),
+    setDrag(d) {
+      drag = d;
+      scheduler.mark(Dirty.Overlay);
+    },
+    resizeColumn(col, width, event) {
+      const columns = store.getSnapshot().columns.slice();
+      const column = { ...columns[col]!, width };
+      columns[col] = column;
+      store.setState({ columns });
+      events.onColumnResize?.({ col, column, width, event });
+    },
+    moveColumn(from, to, event) {
+      const columns = store.getSnapshot().columns.slice();
+      const [column] = columns.splice(from, 1);
+      columns.splice(to, 0, column!);
+      store.setState({ columns });
+      events.onColumnReorder?.({ from, to, column: column!, event });
+    },
+    autoFitWidth(col) {
+      const s = store.getSnapshot();
+      const v = live();
+      const column = s.columns[col]!;
+      const t = resolveTheme(s.theme);
+      let w = text.width(column.title ?? column.id, t.headerFont);
+      const measure = (r: number) => {
+        const val = getCell(r, col, column);
+        if (val != null && val !== '') w = Math.max(w, text.width(String(val), t.cellFont));
+      };
+      for (let r = 0; r < v.frozenRows; r++) measure(r);
+      for (let r = v.rowStart; r < v.rowEnd; r++) measure(r);
+      return Math.ceil(w + 2 * t.cellPaddingX + 1);
+    },
+    copy: copySelection,
+  };
+  surface.scroller.tabIndex = 0;
+  surface.scroller.style.outline = 'none';
+  const detachInteraction = attachInteraction(host);
 
   const unsubscribe = store.subscribe((next, prev) => {
     if (
@@ -493,6 +637,13 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       scheduler.mark(Dirty.All);
     } else if (next.scrollLeft !== prev.scrollLeft || next.scrollTop !== prev.scrollTop) {
       scheduler.mark(Dirty.Scroll | Dirty.Overlay);
+    } else if (
+      next.selection !== prev.selection ||
+      next.activeCell !== prev.activeCell ||
+      next.hoverCell !== prev.hoverCell ||
+      next.focused !== prev.focused
+    ) {
+      scheduler.mark(Dirty.Overlay);
     }
   });
 
@@ -528,7 +679,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     if (!destroyed) onFontsLoaded();
   });
 
-  return {
+  const api: Grid = {
     store,
     domLayer: surface.domLayer,
     element: surface.scroller,
@@ -544,6 +695,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
         scheduler.mark(Dirty.Base);
       }
       if ('onFrame' in o) onFrame = o.onFrame;
+      setEvents(o);
       const patch: Partial<GridState> = {};
       if (o.columns) patch.columns = o.columns;
       if (o.rowCount !== undefined) patch.rowCount = o.rowCount;
@@ -598,11 +750,26 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       if (top + height <= (frozen ? s.theme.headerHeight : vp.bodyTop) || top >= s.viewportHeight) return null;
       return { top, height };
     },
+    setSelection(selection, activeCell) {
+      store.setState(activeCell === undefined ? { selection } : { selection, activeCell });
+    },
+    scrollToCell,
+    getCellBounds(row, col) {
+      const s = store.getSnapshot();
+      if (row < 0 || row >= rows.count || col < 0 || col >= s.columns.length) return null;
+      const v = live();
+      return { x: colX(col, offsets, v), y: rowY(row, rows, v), width: offsets[col + 1]! - offsets[col]!, height: rows.heightOf(row) };
+    },
+    copySelection,
+    focus() {
+      surface.scroller.focus({ preventScroll: true });
+    },
     flush() {
       scheduler.flush();
     },
     destroy() {
       destroyed = true;
+      detachInteraction();
       fonts?.removeEventListener('loadingdone', onFontsLoaded);
       if (idleHandle) cancelRic(idleHandle);
       clearTimeout(resyncTimer);
@@ -611,4 +778,5 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       surface.destroy();
     },
   };
+  return api;
 }
