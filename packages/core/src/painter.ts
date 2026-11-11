@@ -192,17 +192,17 @@ export class BasePainter {
         // Horizontal only: header, frozen rows and body all shift; together they span the
         // full height to the right of the frozen columns.
         setBounds(this.merged, vp.frozenWidth, 0, vp.width, vp.height);
-        this.blit(ctx, this.merged, sx, 0, dpr);
+        this.blit(input, this.merged, sx, 0);
       } else if (sx === 0) {
         // Vertical only: frozen columns and body shift; together they span the full width below.
         setBounds(this.merged, 0, vp.bodyTop, vp.width, vp.height);
-        this.blit(ctx, this.merged, 0, sy, dpr);
+        this.blit(input, this.merged, 0, sy);
       } else {
         // Diagonal: panes move differently. Regions are disjoint, so each blit stays inside its own.
-        this.blit(ctx, this.body, sx, sy, dpr);
-        this.blit(ctx, this.frozenCols, 0, sy, dpr);
-        this.blit(ctx, this.frozenRows, sx, 0, dpr);
-        this.blit(ctx, this.header, sx, 0, dpr);
+        this.blit(input, this.body, sx, sy);
+        this.blit(input, this.frozenCols, 0, sy);
+        this.blit(input, this.frozenRows, sx, 0);
+        this.blit(input, this.header, sx, 0);
       }
     }
     if (dirty) this.addDirtyCells(input, dirty);
@@ -261,8 +261,14 @@ export class BasePainter {
    * Shifts a region's pixels by (sx, sy) device pixels (content moves the opposite way)
    * and queues the exposed strips. Only whole device pixels inside the region are copied;
    * partially covered edge pixels are queued for repaint.
+   *
+   * Exposed strips are widened to whole cells, so a cell's text is always drawn in one call
+   * and never split between a copied part and a repainted part. Some rasterisers (Chrome on
+   * Windows) skip a glyph that only overlaps the clip by a sliver, which left gaps in glyphs
+   * along strip edges.
    */
-  private blit(ctx: PaintContext, r: Region, sx: number, sy: number, dpr: number): void {
+  private blit(input: PaintInput, r: Region, sx: number, sy: number): void {
+    const { ctx, dpr } = input;
     if (sx === 0 && sy === 0) return;
     if (r.x1 <= r.x0 || r.y1 <= r.y0) return;
     const ox0 = Math.floor(r.x0 * dpr + EPS);
@@ -287,16 +293,48 @@ export class BasePainter {
     const dstY = Y0 + Math.max(-sy, 0);
     ctx.drawImage(ctx.canvas, srcX, srcY, w, h, dstX, dstY, w, h);
 
-    // Exposed strips.
-    if (sx > 0) this.pushArea(X1 - sx, Y0, X1, Y1);
-    else if (sx < 0) this.pushArea(X0, Y0, X0 - sx, Y1);
-    if (sy > 0) this.pushArea(X0, Y1 - sy, X1, Y1);
-    else if (sy < 0) this.pushArea(X0, Y0, X1, Y0 - sy);
+    // Exposed strips, widened to whole columns or rows within the region.
+    if (sx !== 0) {
+      const [a, b] = sx > 0 ? [X1 - sx, X1] : [X0, X0 - sx];
+      this.pushArea(this.cellLeft(input, a, ox0), Y0, this.cellRight(input, b, ox1), Y1);
+    }
+    if (sy !== 0) {
+      const [a, b] = sy > 0 ? [Y1 - sy, Y1] : [Y0, Y0 - sy];
+      this.pushArea(X0, this.cellTop(input, a, oy0), X1, this.cellBottom(input, b, oy1));
+    }
     // Partially covered device pixels along fractional region edges.
     if (ox0 < X0) this.pushArea(ox0, oy0, X0, oy1);
     if (X1 < ox1) this.pushArea(X1, oy0, ox1, oy1);
     if (oy0 < Y0) this.pushArea(ox0, oy0, ox1, Y0);
     if (Y1 < oy1) this.pushArea(ox0, Y1, ox1, oy1);
+  }
+
+  // Cell edges around a device-pixel coordinate, for scrolling panes, clamped to [lo, hi].
+  // Every pane that blits horizontally is shifted by scrollLeft, and every pane that blits
+  // vertically has its rows at headerHeight - scrollTop.
+  private cellLeft({ offsets, vp, dpr }: PaintInput, x: number, lo: number): number {
+    const c = indexAtOffset(offsets, x / dpr + vp.scrollLeft);
+    return Math.max(lo, Math.min(x, Math.floor((offsets[c]! - vp.scrollLeft) * dpr + EPS)));
+  }
+
+  private cellRight({ offsets, vp, dpr }: PaintInput, x: number, hi: number): number {
+    const c = indexAtOffset(offsets, x / dpr + vp.scrollLeft - 1e-6);
+    const edge = offsets[Math.min(c + 1, offsets.length - 1)]! - vp.scrollLeft;
+    return Math.min(hi, Math.max(x, Math.ceil(edge * dpr - EPS)));
+  }
+
+  private cellTop({ rows, vp, dpr }: PaintInput, y: number, lo: number): number {
+    if (rows.count === 0) return y;
+    const origin = vp.headerHeight - vp.scrollTop;
+    const r = rows.rowAt(y / dpr - origin);
+    return Math.max(lo, Math.min(y, Math.floor((origin + rows.offsetOf(r)) * dpr + EPS)));
+  }
+
+  private cellBottom({ rows, vp, dpr }: PaintInput, y: number, hi: number): number {
+    if (rows.count === 0) return y;
+    const origin = vp.headerHeight - vp.scrollTop;
+    const r = rows.rowAt(y / dpr - origin - 1e-6);
+    return Math.min(hi, Math.max(y, Math.ceil((origin + rows.offsetOf(r + 1)) * dpr - EPS)));
   }
 
   private addDirtyCells(input: PaintInput, dirty: DirtyCells): void {

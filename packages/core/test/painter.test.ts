@@ -183,6 +183,25 @@ describe('BasePainter scroll blitting', () => {
     ]);
   });
 
+  it('widens exposed strips to whole cells, so text is never split between paints', () => {
+    const { painter, input, calls, reset } = setup();
+    painter.paint(input({ scrollLeft: 30 }));
+    reset();
+    // 30px right: the exposed strip is screen x 470..500, inside column 5 (screen 440..540).
+    painter.update(input({ scrollLeft: 60 }));
+    const area = calls.find((c) => c.op === 'fillRect')!.args;
+    expect(area.slice(0, 1)).toEqual([440]);
+    expect((area[0] as number) + (area[2] as number)).toBe(500);
+    reset();
+    // 40px down: the exposed strip is the bottom 40px; widened up to the top of its first row.
+    const vp = input({ scrollLeft: 60, scrollTop: 40 }).vp;
+    painter.update(input({ scrollLeft: 60, scrollTop: 40 }));
+    const rowArea = calls.find((c) => c.op === 'fillRect')!.args as number[];
+    const firstRow = Math.floor((HEIGHT - 40 - 36 + 40) / 32);
+    expect(rowArea[1]).toBe(36 + firstRow * 32 - 40);
+    expect(rowArea[1]! + rowArea[3]!).toBe(vp.height);
+  });
+
   it('does nothing when the scroll position is unchanged', () => {
     const { painter, input, count, reset } = setup();
     painter.paint(input());

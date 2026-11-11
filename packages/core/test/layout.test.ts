@@ -144,7 +144,8 @@ describe('computeViewport', () => {
           // Each body row whose screen span intersects [bodyTop, height) must be in [rowStart, rowEnd).
           for (let r = vp.frozenRows; r < rowCount; r++) {
             const top = headerHeight + r * rowHeight - scrollTop;
-            const visible = Math.max(top, vp.bodyTop) < Math.min(top + rowHeight, height);
+            // Overlaps under 1e-6 px are rounding noise; computeViewport ignores them by design.
+            const visible = Math.min(top + rowHeight, height) - Math.max(top, vp.bodyTop) > 1e-6;
             const inRange = r >= vp.rowStart && r < vp.rowEnd;
             if (visible && !inRange) return false;
             if (top > height) break;
