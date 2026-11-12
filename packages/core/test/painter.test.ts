@@ -4,6 +4,7 @@ import { BasePainter, MAX_DIRTY_AREAS, snapLine, type PaintContext, type PaintIn
 import { FixedRows, VariableRows, type RowModel } from '../src/rows';
 import { ELLIPSIS, TextMeasurer, type TextWrapper } from '../src/text';
 import { defaultTheme, resolveTheme } from '../src/theme';
+import type { CellRenderer } from '../src/display';
 import type { ColumnDef } from '../src/types';
 
 /** Records calls; property writes are recorded as `set:<prop>`. */
@@ -363,5 +364,55 @@ describe('BasePainter variable rows', () => {
     painter.paint(input({ rows }));
     rows.setHeight(3, 60);
     expect(painter.update(input({ rows })).mode).toBe('full');
+  });
+});
+
+describe('BasePainter declarative cells', () => {
+  /** Every cell: a badge-like rect, then its text. */
+  const renderer: CellRenderer = {
+    layout: (v) => ({
+      ops: [
+        { k: 'rect', x: 0, y: 0, w: 40, h: 18, color: 'red', region: 0, hover: { color: 'blue' }, press: { color: 'navy' } },
+        { k: 'text', x: 4, y: 0, w: 30, h: 18, text: String(v), font: '12px x', color: 'green' },
+      ],
+      regions: [{ x: 0, y: 0, w: 40, h: 18 }],
+      width: 40,
+      height: 18,
+    }),
+    text: String,
+  };
+  const cellColumns: ColumnDef[] = columns.map((c, i) => (i === 1 ? { ...c, cell: renderer } : c));
+
+  it('paints op by op across the rows, setting each style once', () => {
+    const { painter, input, calls } = setup();
+    painter.paint(input({ columns: cellColumns }));
+    const ops = calls.filter((c) => c.op === 'fillRect' || c.op === 'fillText' || c.op === 'set:fillStyle');
+    // The column's run: one colour change, ten rects, one colour change, ten texts.
+    const start = ops.findIndex((c) => c.op === 'set:fillStyle' && c.args[0] === 'red');
+    const run = ops.slice(start, start + 22).map((c) => (c.op === 'set:fillStyle' ? c.args[0] : c.op));
+    expect(run).toEqual(['red', ...Array(10).fill('fillRect'), 'green', ...Array(10).fill('fillText')]);
+    // Rect centred in the 32px row: (32 - 18) / 2 = 7 below each row top.
+    const rects = calls.filter((c) => c.op === 'fillRect' && c.args[2] === 40);
+    expect(rects[0]!.args).toEqual([108, 36 + 7, 40, 18]);
+  });
+
+  it('restyles the hovered and pressed region', () => {
+    const { painter, input, calls } = setup();
+    const base = input({ columns: cellColumns });
+    const env = { theme, text: base.text, wrapper: null, epoch: 0 };
+    painter.paint({ ...base, cells: { env, images: null, hover: { row: 2, col: 1, region: 0 }, pressed: null } });
+    expect(calls.filter((c) => c.op === 'set:fillStyle' && c.args[0] === 'blue')).toHaveLength(1);
+    calls.length = 0;
+    const target = { row: 2, col: 1, region: 0 };
+    painter.paint({ ...base, cells: { env, images: null, hover: target, pressed: target } });
+    expect(calls.filter((c) => c.op === 'set:fillStyle' && c.args[0] === 'navy')).toHaveLength(1);
+  });
+
+  it('places content at the top of auto-height rows', () => {
+    const { painter, input, calls } = setup();
+    const rows = new VariableRows(1000, 32);
+    painter.paint(input({ columns: cellColumns, rows, autoHeight: true }));
+    const rects = calls.filter((c) => c.op === 'fillRect' && c.args[2] === 40);
+    expect(rects[0]!.args).toEqual([108, 36 + theme.cellPaddingY, 40, 18]);
   });
 });

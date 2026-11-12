@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@falcon-grid/cells':
+        specifier: workspace:*
+        version: link:packages/cells
       '@falcon-grid/core':
         specifier: workspace:*
         version: link:packages/core
@@ -47,6 +50,9 @@ importers:
 
   apps/playground:
     dependencies:
+      '@falcon-grid/cells':
+        specifier: workspace:*
+        version: link:../../packages/cells
       '@falcon-grid/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -63,6 +69,9 @@ importers:
 
   bench:
     dependencies:
+      '@falcon-grid/cells':
+        specifier: workspace:*
+        version: link:../packages/cells
       '@falcon-grid/core':
         specifier: workspace:*
         version: link:../packages/core
@@ -118,6 +127,12 @@ importers:
       vite:
         specifier: ^7.3.8
         version: 7.3.8(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
+
+  packages/cells:
+    devDependencies:
+      '@falcon-grid/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core: {}
 

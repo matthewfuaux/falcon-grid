@@ -1,4 +1,10 @@
-export type CellValue = string | number | boolean | null | undefined;
+import type { CellRenderer, CellTarget } from './display';
+
+/**
+ * What `getCell` returns. Plain columns paint it as text; columns with a `cell` renderer get it
+ * as is, so it can be any value (an object for a user cell, an array for tags).
+ */
+export type CellValue = string | number | boolean | object | null | undefined;
 
 /**
  * Pull-based data access: the grid only asks for cells in the visible window. `col` is the
@@ -27,6 +33,11 @@ export interface ColumnDef {
   resizable?: boolean;
   /** Allow drag reordering (default true). */
   reorderable?: boolean;
+  /**
+   * Draw cells from a display list instead of as text: layout primitives, images and
+   * interactive regions. See `cell()` and the built-in column types in `@falcon-grid/cells`.
+   */
+  cell?: CellRenderer;
 }
 
 /** A cell position: row and column index. */
@@ -73,6 +84,14 @@ export interface Theme {
   selectionBorder: string;
   /** Active cell ring, and drag indicators. */
   focusRing: string;
+  /** Colours for cell primitives: secondary text, links and controls, and status tones. */
+  mutedForeground: string;
+  accent: string;
+  /** Text and marks on an `accent` fill (a checked checkbox, a solid button). */
+  accentForeground: string;
+  success: string;
+  warning: string;
+  danger: string;
 }
 
 /** Everything the core renders from. Plain data, so a snapshot can be sent to a worker later. */
@@ -98,6 +117,9 @@ export interface GridState {
   hoverCell: CellRef | null;
   /** Whether the grid element has keyboard focus. */
   focused: boolean;
+  /** Interactive cell region under the pointer, and the one being pressed. */
+  hoverTarget: CellTarget | null;
+  pressedTarget: CellTarget | null;
 }
 
 export interface FrameInfo {

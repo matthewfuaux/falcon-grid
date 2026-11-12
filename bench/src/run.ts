@@ -16,14 +16,19 @@ import { build, preview } from 'vite';
 import { TRACE_CATEGORIES, frameWork } from './trace';
 
 const TARGETS = ['falcon', 'glide', 'vtable', 'tanstack'] as const;
-const SCENARIOS = ['scroll-y', 'scroll-x', 'updates', 'scroll-y-wrap', 'scroll-up-wrap'] as const;
+const SCENARIOS = [
+  'scroll-y', 'scroll-x', 'updates', 'scroll-y-wrap', 'scroll-up-wrap', 'scroll-y-cells', 'scroll-x-cells',
+] as const;
 type Scenario = (typeof SCENARIOS)[number];
 /**
  * Wrapped text with auto-height rows. Only targets with built-in auto row heights take part:
  * the competitors would need hand-written measurement, which would not be a fair comparison.
  */
 const WRAP_SCENARIOS: readonly Scenario[] = ['scroll-y-wrap', 'scroll-up-wrap'];
-const WRAP_TARGETS = ['falcon'];
+/** Every column a declarative cell built from layout primitives (falcon-grid's built-in column types). */
+const CELL_SCENARIOS: readonly Scenario[] = ['scroll-y-cells', 'scroll-x-cells'];
+const OWN_SCENARIOS = [...WRAP_SCENARIOS, ...CELL_SCENARIOS];
+const OWN_TARGETS = ['falcon'];
 
 const { values: args } = parseArgs({
   options: {
@@ -158,8 +163,8 @@ async function runScenario(
   await browser.startTracing(page, { categories: TRACE_CATEGORIES });
   await page.evaluate(() => (window as unknown as { __rec: { start(): void } }).__rec.start());
 
-  if (scenario === 'scroll-y' || scenario === 'scroll-y-wrap') await wheel(page, 300, 0, 120);
-  else if (scenario === 'scroll-x') await wheel(page, 150, 120, 0);
+  if (scenario === 'scroll-y' || scenario === 'scroll-y-wrap' || scenario === 'scroll-y-cells') await wheel(page, 300, 0, 120);
+  else if (scenario === 'scroll-x' || scenario === 'scroll-x-cells') await wheel(page, 150, 120, 0);
   else if (scenario === 'scroll-up-wrap') await wheel(page, 300, 0, -120);
   else {
     await page.evaluate(() => window.__bench!.startUpdates(1000));
@@ -249,12 +254,13 @@ async function main() {
     for (const target of targets) {
       for (const scenario of scenarios) {
         process.stdout.write(`${target} / ${scenario} … `);
-        if (WRAP_SCENARIOS.includes(scenario) && !WRAP_TARGETS.includes(target)) {
-          console.log(`${target} / ${scenario} … skipped (no built-in auto row heights)`);
+        if (OWN_SCENARIOS.includes(scenario) && !OWN_TARGETS.includes(target)) {
+          console.log('skipped (falcon-grid only: auto row heights or declarative cells)');
           continue;
         }
         const wrap = WRAP_SCENARIOS.includes(scenario) ? '&wrap' : '';
-        const url = `${base}${target}.html?rows=${args.rows}&cols=${args.cols}${wrap}`;
+        const cells = CELL_SCENARIOS.includes(scenario) ? '&cells' : '';
+        const url = `${base}${target}.html?rows=${args.rows}&cols=${args.cols}${wrap}${cells}`;
         const r = await runScenario(browser, url, target, scenario, outDir);
         results.push(r);
         console.log(`work p95 ${f(r.work.p95, 2)} ms over ${r.work.frames} frames`);

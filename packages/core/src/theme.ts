@@ -21,6 +21,12 @@ export const defaultTheme: Theme = {
   selectionBackground: 'rgba(9, 105, 218, 0.12)',
   selectionBorder: 'rgba(9, 105, 218, 0.6)',
   focusRing: '#0969da',
+  mutedForeground: '#59636e',
+  accent: '#0969da',
+  accentForeground: '#ffffff',
+  success: '#1a7f37',
+  warning: '#9a6700',
+  danger: '#d1242f',
 };
 
 export function mergeTheme(base: Theme, patch: Partial<Theme> | undefined): Theme {

@@ -42,6 +42,8 @@ const layouts = [
   { name: 'frozen panes', params: 'frozenColumns=2&frozenRows=3' },
   { name: 'frozen + striped, odd row height', params: 'frozenColumns=1&frozenRows=1&zebra' },
   { name: 'wrapped text, auto height', params: 'wrap&frozenColumns=1&frozenRows=1&zebra' },
+  { name: 'declarative cells', params: 'cells&frozenColumns=1&frozenRows=2' },
+  { name: 'declarative cells, auto height', params: 'cells&wrap&frozenColumns=1&frozenRows=1&zebra' },
 ];
 
 for (const dpr of [1, 1.5, 2]) {

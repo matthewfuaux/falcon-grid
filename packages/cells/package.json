@@ -1,0 +1,31 @@
+{
+  "name": "@falcon-grid/cells",
+  "version": "0.0.0",
+  "description": "Declarative cells for falcon-grid: layout primitives and built-in column types.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@falcon-grid/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@falcon-grid/core": "workspace:*"
+  }
+}

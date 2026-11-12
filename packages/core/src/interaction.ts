@@ -14,6 +14,7 @@ import {
   tabCell,
   type GridDims,
 } from './selection';
+import type { CellRegion, CellTarget } from './display';
 import type { Store } from './store';
 import type { CellRange, CellRef, ColumnDef, GridEvents, GridState } from './types';
 
@@ -34,6 +35,10 @@ export interface InteractionHost {
   /** Width that fits the column's header and the cells on screen. */
   autoFitWidth(col: number): number;
   copy(): { text: string; html: string } | null;
+  /** The interactive region of a declarative cell under a viewport point. */
+  targetAt(row: number, col: number, x: number, y: number): { target: CellTarget; region: CellRegion } | null;
+  /** Runs a region's click handler. */
+  activate(target: CellTarget, event: Event): void;
 }
 
 /** Pointer travel before a header press becomes a column drag, in CSS pixels. */
@@ -46,13 +51,18 @@ type Mode =
   | { kind: 'select' }
   | { kind: 'resize'; col: number; startX: number; startWidth: number }
   | { kind: 'header'; col: number; startX: number }
-  | { kind: 'reorder'; col: number; drop: number };
+  | { kind: 'reorder'; col: number; drop: number }
+  /** A clickable cell region is held down. */
+  | { kind: 'press'; target: CellTarget };
 
 const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']);
 
 const sameRanges = (a: readonly CellRange[], b: readonly CellRange[]) =>
   a.length === b.length &&
   a.every((r, i) => r.top === b[i]!.top && r.left === b[i]!.left && r.bottom === b[i]!.bottom && r.right === b[i]!.right);
+
+const sameTarget = (a: CellTarget | null, b: CellTarget | null) =>
+  a === b || (a !== null && b !== null && a.row === b.row && a.col === b.col && a.region === b.region);
 
 const clampWidth = (c: ColumnDef, w: number) => Math.round(Math.min(c.maxWidth ?? 2000, Math.max(c.minWidth ?? 32, w)));
 
@@ -107,9 +117,23 @@ export function attachInteraction(host: InteractionHost): () => void {
     if (el.style.cursor !== c) el.style.cursor = c;
   };
 
+  const setTitle = (t: string) => {
+    if (el.title !== t) el.title = t;
+  };
+
+  /** Hovers the interactive region under a point (or none); returns it. */
+  const hoverTargetAt = (x: number, y: number, hit: Hit) => {
+    const t = hit.region === 'cell' ? host.targetAt(hit.row, hit.col, x, y) : null;
+    if (!sameTarget(store.getSnapshot().hoverTarget, t?.target ?? null)) store.setState({ hoverTarget: t?.target ?? null });
+    return t;
+  };
+
   const hoverAt = (x: number, y: number) => {
     const hit = host.hitTest(x, y);
-    setCursor(hit.region === 'resize' ? 'col-resize' : '');
+    const t = hoverTargetAt(x, y, hit);
+    const r = t?.region;
+    setCursor(hit.region === 'resize' ? 'col-resize' : r ? (r.cursor ?? (r.onClick ? 'pointer' : '')) : '');
+    setTitle(r?.tooltip ?? '');
     setHover(hit.region === 'cell' ? { row: hit.row, col: hit.col } : hit.region === 'header' ? { row: -1, col: hit.col } : null);
   };
 
@@ -206,6 +230,17 @@ export function attachInteraction(host: InteractionHost): () => void {
     const hit = host.hitTest(lastX, lastY);
     if (hit.region === 'none') return;
     el.focus({ preventScroll: true });
+    if (e.button === 0 && hit.region === 'cell') {
+      // Pressing a clickable region of a declarative cell: no selection, a click on release.
+      const t = host.targetAt(hit.row, hit.col, lastX, lastY);
+      if (t?.region.onClick) {
+        e.preventDefault();
+        mode = { kind: 'press', target: t.target };
+        store.setState({ hoverTarget: t.target, pressedTarget: t.target });
+        el.setPointerCapture?.(e.pointerId);
+        return;
+      }
+    }
     if (e.button === 2) {
       if (hit.region === 'cell' && !selectionContains(store.getSnapshot().selection, hit.row, hit.col)) {
         pressCell({ row: hit.row, col: hit.col }, e);
@@ -239,6 +274,10 @@ export function attachInteraction(host: InteractionHost): () => void {
     switch (mode.kind) {
       case 'none':
         if (e && e.buttons === 0) hoverAt(lastX, lastY);
+        return;
+      case 'press':
+        // The pressed look shows only while the pointer is over the pressed region.
+        hoverTargetAt(lastX, lastY, host.hitTest(lastX, lastY));
         return;
       case 'resize': {
         const s = store.getSnapshot();
@@ -292,6 +331,12 @@ export function attachInteraction(host: InteractionHost): () => void {
       }
     }
     if (m.kind === 'resize' || m.kind === 'reorder') host.setDrag({ kind: 'none' });
+    if (m.kind === 'press') {
+      const over = sameTarget(store.getSnapshot().hoverTarget, m.target);
+      store.setState({ pressedTarget: null });
+      dragged = true; // the click that follows is the region's, not the cell's
+      if (commit && over) host.activate(m.target, e);
+    }
     setCursor('');
   };
 
@@ -312,6 +357,8 @@ export function attachInteraction(host: InteractionHost): () => void {
     if (mode.kind === 'none') {
       setHover(null);
       setCursor('');
+      setTitle('');
+      if (store.getSnapshot().hoverTarget) store.setState({ hoverTarget: null });
     }
   };
 
@@ -326,7 +373,14 @@ export function attachInteraction(host: InteractionHost): () => void {
     if (dragged) return;
     const { hit, column } = cellEvent(e);
     if (hit.region === 'cell') {
-      if (pointerType === 'touch') pressCell({ row: hit.row, col: hit.col }, e);
+      if (pointerType === 'touch') {
+        const t = host.targetAt(hit.row, hit.col, lastX, lastY);
+        if (t?.region.onClick) {
+          host.activate(t.target, e);
+          return;
+        }
+        pressCell({ row: hit.row, col: hit.col }, e);
+      }
       host.events.onCellClick?.({ row: hit.row, col: hit.col, column, event: e });
     } else if (hit.region === 'header') {
       host.events.onHeaderClick?.({ col: hit.col, column, event: e });

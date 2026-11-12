@@ -1,9 +1,11 @@
 import { selectionToClipboard } from './clipboard';
+import { EMPTY_LIST, contentTop, regionAt, type CellEnv, type CellRegion, type CellTarget, type DisplayList } from './display';
+import { ImageCache } from './images';
 import { colX, createHit, hitTest, rowY } from './hittest';
 import { attachInteraction, type InteractionHost } from './interaction';
 import { buildColumnOffsets, computeViewport, createViewportRange } from './layout';
 import { paintOverlay, type DragIndicator } from './overlay';
-import { BasePainter, MAX_DIRTY_AREAS, type DirtyCells, type PaintInput } from './painter';
+import { BasePainter, MAX_DIRTY_AREAS, type CellPaint, type DirtyCells, type PaintInput } from './painter';
 import { FixedRows, VariableRows, type RowModel } from './rows';
 import { ScrollAxis } from './scroll';
 import { Dirty, createScheduler, type FrameSource, type Scheduler } from './scheduler';
@@ -98,6 +100,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     activeCell: null,
     hoverCell: null,
     focused: false,
+    hoverTarget: null,
+    pressedTarget: null,
   });
   const events: GridEvents = {};
   const EVENT_KEYS = [
@@ -117,6 +121,14 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   const vp = createViewportRange();
   const painter = new BasePainter();
   const text = new TextMeasurer();
+  /** Layout environment for cell renderers; a new epoch makes their cached layouts stale. */
+  const env: CellEnv = { theme: resolved, text, wrapper, epoch: 0 };
+  const images = new ImageCache((cells) => {
+    if (destroyed) return;
+    if (!cells) scheduler.mark(Dirty.Base);
+    else for (let i = 0; i + 1 < cells.length; i += 2) markCell(cells[i]!, cells[i + 1]!);
+  });
+  const cellPaint: CellPaint = { env, images, hover: null, pressed: null };
   const info: FrameInfo = {
     frame: 0, flags: 0, durationMs: 0, cellsPainted: 0, paint: 'none', blitX: 0, blitY: 0, rowsMeasured: 0,
     overlay: false,
@@ -131,7 +143,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   // Row geometry. Fixed sizing is arithmetic; auto sizing keeps a VariableRows across layouts.
   let rows: RowModel = new FixedRows(options.rowCount, store.getSnapshot().theme.rowHeight);
   let variable: VariableRows | null = null;
-  /** Columns that wrap (auto sizing measures only these). */
+  /** Columns whose content decides row heights: wrapping text and cell renderers. */
   let wrapped: number[] = [];
   /** Every measurement is stale (data, widths, theme or fonts changed). */
   let heightsStale = false;
@@ -149,6 +161,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     text,
     wrapper,
     autoHeight: false,
+    cells: cellPaint,
   };
 
   const contentWidth = () => offsets[offsets.length - 1]!;
@@ -228,18 +241,21 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   /** Height of one row: the tallest wrapped cell, at least theme.rowHeight. */
   const measureRow = (row: number, s: GridState): number => {
     const t = s.theme;
-    let lines = 1;
-    if (wrapper) {
-      for (const c of wrapped) {
-        const v = getCell(row, c, s.columns[c]!);
-        if (v == null || v === '') continue;
-        const avail = offsets[c + 1]! - offsets[c]! - 2 * t.cellPaddingX;
-        if (avail <= 0) continue;
+    let content = t.lineHeight;
+    for (const c of wrapped) {
+      const column = s.columns[c]!;
+      const v = getCell(row, c, column);
+      if (v == null || v === '') continue;
+      const avail = offsets[c + 1]! - offsets[c]! - 2 * t.cellPaddingX;
+      if (avail <= 0) continue;
+      if (column.cell) {
+        content = Math.max(content, column.cell.layout(v, avail, env).height);
+      } else if (wrapper) {
         const n = wrapper.lineCount(typeof v === 'string' ? v : String(v), resolved.cellFont, avail);
-        if (n > lines) lines = n;
+        content = Math.max(content, n * t.lineHeight);
       }
     }
-    return Math.max(t.rowHeight, lines * t.lineHeight + 2 * t.cellPaddingY);
+    return Math.max(t.rowHeight, Math.ceil(content - 1e-6) + 2 * t.cellPaddingY);
   };
 
   /**
@@ -412,7 +428,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       }
     }
     wrapped = [];
-    s.columns.forEach((c, i) => c.wrap && wrapped.push(i));
+    s.columns.forEach((c, i) => (c.cell || c.wrap) && wrapped.push(i));
   };
 
   const wrappedWidthsChanged = (a: readonly ColumnDef[], b: readonly ColumnDef[]) => {
@@ -420,7 +436,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     for (let i = 0; i < a.length; i++) {
       const x = a[i]!;
       const y = b[i]!;
-      if ((x.wrap || y.wrap) && (x.wrap !== y.wrap || x.width !== y.width || x.id !== y.id)) return true;
+      const sized = x.wrap || y.wrap || x.cell || y.cell;
+      if (sized && (x.wrap !== y.wrap || x.cell !== y.cell || x.width !== y.width || x.id !== y.id)) return true;
     }
     return false;
   };
@@ -438,6 +455,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     if (resolvedFor !== s.theme) {
       resolved = resolveTheme(s.theme);
       resolvedFor = s.theme;
+      env.theme = resolved;
+      env.epoch++;
     }
     // Capture the anchor under the old geometry, before the row model changes.
     captureAnchor(s);
@@ -486,6 +505,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       input.getCell = getCell;
       input.wrapper = wrapper;
       input.autoHeight = variable !== null;
+      cellPaint.hover = s.hoverTarget;
+      cellPaint.pressed = s.pressedTarget;
       const result =
         flags & Dirty.Base ? painter.paint(input) : painter.update(input, dirty.count > 0 ? dirty : undefined);
       dirty.count = 0;
@@ -565,12 +586,40 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     if (pos.left !== undefined || pos.top !== undefined) api.scrollTo(pos);
   };
 
+  /** A cell's text as copied: its value, or its renderer's text for declarative cells. */
+  const textOf = (row: number, col: number, column: ColumnDef): string => {
+    const v = getCell(row, col, column);
+    if (v == null) return '';
+    return column.cell ? column.cell.text(v) : String(v);
+  };
+
+  /** A declarative cell's display list at its column's current width. */
+  const listOf = (row: number, col: number, column: ColumnDef): DisplayList => {
+    const v = getCell(row, col, column);
+    if (v == null || !column.cell) return EMPTY_LIST;
+    const avail = offsets[col + 1]! - offsets[col]! - 2 * resolved.cellPaddingX;
+    return avail > 0 ? column.cell.layout(v, avail, env) : EMPTY_LIST;
+  };
+
+  /** The interactive region of a declarative cell under a viewport point, if any. */
+  const targetAt = (row: number, col: number, x: number, y: number): { target: CellTarget; region: CellRegion } | null => {
+    const column = store.getSnapshot().columns[col];
+    if (!column?.cell || row < 0 || row >= rows.count) return null;
+    const list = listOf(row, col, column);
+    if (list.regions.length === 0) return null;
+    const v = live();
+    const left = colX(col, offsets, v) + resolved.cellPaddingX;
+    const top = rowY(row, rows, v);
+    const i = regionAt(list, x - left, y - top - contentTop(list.height, rows.heightOf(row), resolved, variable !== null));
+    return i < 0 ? null : { target: { row, col, region: i }, region: list.regions[i]! };
+  };
+
   const copySelection = () => {
     const s = store.getSnapshot();
     const a = s.activeCell;
     const source = s.selection.length > 0 ? s.selection : a ? [{ top: a.row, left: a.col, bottom: a.row, right: a.col }] : [];
     const ranges = source.map((r) => clampRange(r, s.rowCount, s.columns.length)).filter((r) => r !== null);
-    return ranges.length > 0 ? selectionToClipboard(ranges, getCell, s.columns) : null;
+    return ranges.length > 0 ? selectionToClipboard(ranges, (r, c) => textOf(r, c, s.columns[c]!)) : null;
   };
 
   const host: InteractionHost = {
@@ -609,6 +658,10 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       const t = resolveTheme(s.theme);
       let w = text.width(column.title ?? column.id, t.headerFont);
       const measure = (r: number) => {
+        if (column.cell) {
+          w = Math.max(w, listOf(r, col, column).width);
+          return;
+        }
         const val = getCell(r, col, column);
         if (val != null && val !== '') w = Math.max(w, text.width(String(val), t.cellFont));
       };
@@ -617,6 +670,13 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       return Math.ceil(w + 2 * t.cellPaddingX + 1);
     },
     copy: copySelection,
+    targetAt,
+    activate(target, event) {
+      const column = store.getSnapshot().columns[target.col];
+      if (!column) return;
+      const region = listOf(target.row, target.col, column).regions[target.region];
+      region?.onClick?.({ row: target.row, col: target.col, column, event });
+    },
   };
   surface.scroller.tabIndex = 0;
   surface.scroller.style.outline = 'none';
@@ -645,11 +705,36 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     ) {
       scheduler.mark(Dirty.Overlay);
     }
+    // Hovered and pressed regions restyle their cell on the base layer.
+    if (next.hoverTarget !== prev.hoverTarget || next.pressedTarget !== prev.pressedTarget) {
+      const ts = [prev.hoverTarget, next.hoverTarget, prev.pressedTarget, next.pressedTarget];
+      ts.forEach((t, i) => {
+        // Once per cell: moving between two buttons in one cell repaints it once.
+        if (t && !ts.slice(0, i).some((u) => u && u.row === t.row && u.col === t.col)) markCell(t.row, t.col);
+      });
+    }
   });
 
+  /** The data of a cell (or, with col -1, a row) changed. */
   const addDirty = (row: number, col: number) => {
     // A changed wrapped cell can change its row's height.
     if (variable && row >= 0 && row < variable.count && (col < 0 || wrapped.includes(col))) variable.unset(row);
+    // Values changed in place keep their identity: drop layouts cached for them.
+    const columns = store.getSnapshot().columns;
+    if (row >= 0 && row < rows.count) {
+      for (let c = col < 0 ? 0 : col, end = col < 0 ? columns.length : col + 1; c < end; c++) {
+        const column = columns[c];
+        if (column?.cell?.forget) {
+          const v = getCell(row, c, column);
+          if (v != null) column.cell.forget(v);
+        }
+      }
+    }
+    markCell(row, col);
+  };
+
+  /** Repaint a cell (col -1: a row) on the next frame, without touching its data or height. */
+  function markCell(row: number, col: number) {
     if (dirty.count >= MAX_DIRTY_AREAS) {
       // Too many to paint piecemeal; a full repaint is cheaper.
       scheduler.mark(Dirty.Base);
@@ -659,7 +744,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     dirty.cells[dirty.count * 2 + 1] = col;
     dirty.count++;
     scheduler.mark(Dirty.Cells);
-  };
+  }
 
   scheduler.mark(Dirty.All);
 
@@ -670,6 +755,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   const onFontsLoaded = () => {
     text.clear();
     wrapper?.clear();
+    env.epoch++;
     if (variable) heightsStale = true;
     painter.invalidate();
     scheduler.mark(Dirty.Base);
@@ -691,6 +777,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       }
       if ('textWrapper' in o && (o.textWrapper ?? null) !== wrapper) {
         wrapper = o.textWrapper ?? null;
+        env.wrapper = wrapper;
+        env.epoch++;
         if (variable) heightsStale = true;
         scheduler.mark(Dirty.Base);
       }
@@ -710,6 +798,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     },
     invalidate() {
       if (variable) heightsStale = true;
+      env.epoch++;
       scheduler.mark(Dirty.Base);
     },
     invalidateCell(row, col) {
@@ -774,6 +863,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       if (idleHandle) cancelRic(idleHandle);
       clearTimeout(resyncTimer);
       unsubscribe();
+      images.destroy();
       scheduler.destroy();
       surface.destroy();
     },

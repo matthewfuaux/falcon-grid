@@ -19,6 +19,7 @@ export {
   snap,
   snapLine,
   type DirtyCells,
+  type CellPaint,
   type PaintContext,
   type PaintInput,
   type PaintMode,
@@ -32,7 +33,47 @@ export {
   themeVariableName,
   type ResolvedTheme,
 } from './theme';
-export type { CellValue, ColumnAlign, ColumnDef, FrameInfo, GetCell, GridState, RowSizing, Theme } from './types';
+export type {
+  CellEvent,
+  CellRange,
+  CellRef,
+  CellValue,
+  ColumnAlign,
+  ColumnDef,
+  ColumnReorderEvent,
+  ColumnResizeEvent,
+  FrameInfo,
+  GetCell,
+  GridEvents,
+  GridState,
+  HeaderEvent,
+  RowSizing,
+  SelectionChangeEvent,
+  Theme,
+} from './types';
+export {
+  EMPTY_LIST,
+  contentTop,
+  paintOp,
+  regionAt,
+  StyleCache,
+  type CellActionEvent,
+  type CellEnv,
+  type CellRegion,
+  type CellRenderer,
+  type CellTarget,
+  type CustomOp,
+  type DisplayList,
+  type DrawOp,
+  type ImageOp,
+  type OpContext,
+  type OpState,
+  type OpStyle,
+  type PathOp,
+  type RectOp,
+  type TextOp,
+} from './display';
+export { ImageCache } from './images';
 export { FixedRows, VariableRows, type RowModel } from './rows';
 export { TextMeasurer, canvasMeasure, ELLIPSIS, type MeasureFn, type TextWrapper } from './text';
 export { LRU } from './lru';

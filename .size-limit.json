@@ -7,6 +7,16 @@
     "gzip": true
   },
   {
+    "name": "@falcon-grid/cells (core excluded)",
+    "path": "packages/cells/dist/index.js",
+    "import": "*",
+    "ignore": [
+      "@falcon-grid/core"
+    ],
+    "limit": "8 kB",
+    "gzip": true
+  },
+  {
     "name": "@falcon-grid/text (Pretext included, core excluded)",
     "path": "packages/text/dist/index.js",
     "import": "*",

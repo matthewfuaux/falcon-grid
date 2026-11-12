@@ -1,3 +1,14 @@
+import {
+  StyleCache,
+  contentTop,
+  paintOp,
+  type CellEnv,
+  type CellTarget,
+  type DisplayList,
+  type OpContext,
+  type OpState,
+} from './display';
+import type { ImageCache } from './images';
 import { indexAtOffset, type ViewportRange } from './layout';
 import type { RowModel } from './rows';
 import { ELLIPSIS, type TextMeasurer, type TextWrapper } from './text';
@@ -5,24 +16,15 @@ import type { ResolvedTheme } from './theme';
 import type { ColumnAlign, ColumnDef, GetCell } from './types';
 
 /** The subset of CanvasRenderingContext2D the base painter uses. Kept narrow so tests can record calls. */
-export type PaintContext = Pick<
-  CanvasRenderingContext2D,
-  | 'setTransform'
-  | 'fillRect'
-  | 'beginPath'
-  | 'rect'
-  | 'fill'
-  | 'save'
-  | 'restore'
-  | 'clip'
-  | 'fillText'
-  | 'drawImage'
-  | 'imageSmoothingEnabled'
-  | 'fillStyle'
-  | 'font'
-  | 'textAlign'
-  | 'textBaseline'
-> & { readonly canvas: CanvasImageSource };
+export type PaintContext = OpContext & { readonly canvas: CanvasImageSource };
+
+/** What painting declarative cells needs beyond plain text. */
+export interface CellPaint {
+  env: CellEnv;
+  images: ImageCache | null;
+  hover: CellTarget | null;
+  pressed: CellTarget | null;
+}
 
 export interface PaintInput {
   ctx: PaintContext;
@@ -39,6 +41,8 @@ export interface PaintInput {
   wrapper: TextWrapper | null;
   /** Auto-height rows: text blocks sit at the top of the row instead of being centred. */
   autoHeight: boolean;
+  /** Layout environment, images and interaction state for columns with a `cell` renderer. */
+  cells?: CellPaint;
 }
 
 /** Cells to repaint: [row, col] pairs. A col of -1 means the whole row. */
@@ -132,6 +136,12 @@ export class BasePainter {
   private lastGeometry = '';
 
   private readonly result: PaintResult = { mode: 'full', cells: 0, blitX: 0, blitY: 0, areas: 0 };
+
+  // Declarative cells: per-row display lists and content tops for the column being painted.
+  private lists: (DisplayList | null)[] = [];
+  private listTops = new Float64Array(64);
+  private readonly style = new StyleCache();
+  private readonly opState: OpState = { hover: -1, press: -1 };
 
   /** Forget the canvas contents; the next paint is a full repaint. */
   invalidate(): void {
@@ -513,12 +523,17 @@ export class BasePainter {
       const col = columns[c]!;
       const align = col.align ?? 'left';
       const wrap = col.wrap === true && wrapper !== null;
-      ctx.textAlign = align;
-      const x = snap(textX(align, left, right, pad), dpr);
       ctx.save();
       ctx.beginPath();
       ctx.rect(clipLeft, r.y0, clipRight - clipLeft, r.y1 - r.y0);
       ctx.clip();
+      if (col.cell) {
+        cells += this.paintCells(input, r, c, left + pad, avail);
+        ctx.restore();
+        continue;
+      }
+      ctx.textAlign = align;
+      const x = snap(textX(align, left, right, pad), dpr);
       for (let row = r.rowStart; row < r.rowEnd; row++) {
         const v = getCell(row, c, columns[c]!);
         if (v == null || v === '') continue;
@@ -545,6 +560,61 @@ export class BasePainter {
       }
       ctx.restore();
     }
+    return cells;
+  }
+
+  /**
+   * Paints a declarative column: one display list per row, painted op index by op index across
+   * the rows. Cells never overlap, so this keeps each cell's paint order while consecutive draws
+   * share a font and colour (cells in a column usually have the same structure).
+   */
+  private paintCells(input: PaintInput, r: Region, c: number, x: number, avail: number): number {
+    const { ctx, dpr, columns, getCell, theme, autoHeight } = input;
+    const column = columns[c]!;
+    const renderer = column.cell!;
+    const cp = input.cells ?? {
+      env: { theme, text: input.text, wrapper: input.wrapper, epoch: 0 },
+      images: null,
+      hover: null,
+      pressed: null,
+    };
+    const n = r.rowEnd - r.rowStart;
+    if (this.listTops.length < n) this.listTops = new Float64Array(Math.max(n, this.listTops.length * 2));
+    const lists = this.lists;
+    let maxOps = 0;
+    let cells = 0;
+    for (let i = 0; i < n; i++) {
+      const v = getCell(r.rowStart + i, c, column);
+      const list = v == null ? null : renderer.layout(v, avail, cp.env);
+      lists[i] = list;
+      if (!list || list.ops.length === 0) continue;
+      const top = r.tops[i]!;
+      this.listTops[i] = top + contentTop(list.height, r.tops[i + 1]! - top, theme, autoHeight);
+      if (list.ops.length > maxOps) maxOps = list.ops.length;
+      cells++;
+    }
+    const style = this.style;
+    const state = this.opState;
+    style.reset();
+    ctx.textAlign = 'left';
+    for (let k = 0; k < maxOps; k++) {
+      for (let i = 0; i < n; i++) {
+        const op = lists[i]?.ops[k];
+        if (!op) continue;
+        const row = r.rowStart + i;
+        const h = cp.hover;
+        const p = cp.pressed;
+        state.hover = h && h.row === row && h.col === c ? h.region : -1;
+        state.press = p && p.row === row && p.col === c ? p.region : -1;
+        if (!paintOp(ctx, op, x, this.listTops[i]!, dpr, state, style, cp.images) && op.k === 'image') {
+          cp.images?.want(op.src, row, c);
+        }
+      }
+    }
+    lists.fill(null, 0, n);
+    if (style.alpha !== 1) ctx.globalAlpha = 1;
+    ctx.font = theme.cellFont;
+    ctx.fillStyle = theme.foreground;
     return cells;
   }
 

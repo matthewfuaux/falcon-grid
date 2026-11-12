@@ -13,7 +13,6 @@ import {
   selectionContains,
   tabCell,
 } from '../src/selection';
-import type { ColumnDef } from '../src/types';
 
 const d = { rows: 100, cols: 10, page: 20 };
 const at = (row: number, col: number) => ({ row, col });
@@ -109,27 +108,26 @@ describe('keyboard movement', () => {
 });
 
 describe('clipboard', () => {
-  const columns: ColumnDef[] = Array.from({ length: 5 }, (_, i) => ({ id: `c${i}`, width: 100 }));
   const getCell = (r: number, c: number) => `${r}.${c}`;
 
   it('writes a range as TSV and an HTML table', () => {
-    const { text, html } = selectionToClipboard([rangeOf(at(1, 1), at(2, 2))], getCell, columns);
+    const { text, html } = selectionToClipboard([rangeOf(at(1, 1), at(2, 2))], getCell);
     expect(text).toBe('1.1\t1.2\n2.1\t2.2');
     expect(html).toBe('<table><tr><td>1.1</td><td>1.2</td></tr><tr><td>2.1</td><td>2.2</td></tr></table>');
   });
 
   it('quotes and escapes special characters', () => {
-    const { text, html } = selectionToClipboard([rangeOf(at(0, 0), at(0, 1))], (_r, c) => (c === 0 ? 'a\tb "c"' : '<x&y>'), columns);
+    const { text, html } = selectionToClipboard([rangeOf(at(0, 0), at(0, 1))], (_r, c) => (c === 0 ? 'a\tb "c"' : '<x&y>'));
     expect(text).toBe('"a\tb ""c"""\t<x&y>');
     expect(html).toContain('<td>&lt;x&amp;y&gt;</td>');
   });
 
   it('copies only covered columns of several ranges, blank outside them', () => {
     const sel = [rangeOf(at(0, 0), at(1, 0)), rangeOf(at(1, 3), at(1, 3))];
-    expect(selectionToClipboard(sel, getCell, columns).text).toBe('0.0\t\n1.0\t1.3');
+    expect(selectionToClipboard(sel, getCell).text).toBe('0.0\t\n1.0\t1.3');
   });
 
   it('writes empty values as empty fields', () => {
-    expect(selectionToClipboard([rangeOf(at(0, 0), at(0, 2))], (_r, c) => (c === 1 ? null : 'x'), columns).text).toBe('x\t\tx');
+    expect(selectionToClipboard([rangeOf(at(0, 0), at(0, 2))], (_r, c) => (c === 1 ? '' : 'x')).text).toBe('x\t\tx');
   });
 });

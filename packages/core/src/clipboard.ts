@@ -1,7 +1,5 @@
 import { coveredSpans, selectionContains } from './selection';
-import type { CellRange, CellValue, ColumnDef, GetCell } from './types';
-
-const str = (v: CellValue) => (v == null ? '' : String(v));
+import type { CellRange } from './types';
 
 /** TSV quoting as spreadsheets expect: quote fields with tabs, newlines or quotes; double quotes. */
 const tsvField = (s: string) => (/[\t\n\r"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
@@ -16,8 +14,8 @@ const htmlEscape = (s: string) =>
  */
 export function selectionToClipboard(
   ranges: readonly CellRange[],
-  getCell: GetCell,
-  columns: readonly ColumnDef[],
+  /** A cell's text. */
+  textOf: (row: number, col: number) => string,
 ): { text: string; html: string } {
   const rowSpans = coveredSpans(ranges, 'rows');
   const colSpans = coveredSpans(ranges, 'cols');
@@ -30,7 +28,7 @@ export function selectionToClipboard(
       html.push('<tr>');
       for (const [c0, c1] of colSpans) {
         for (let c = c0; c <= c1; c++) {
-          const v = !multi || selectionContains(ranges, r, c) ? str(getCell(r, c, columns[c]!)) : '';
+          const v = !multi || selectionContains(ranges, r, c) ? textOf(r, c) : '';
           cells.push(tsvField(v));
           html.push(`<td>${htmlEscape(v)}</td>`);
         }
