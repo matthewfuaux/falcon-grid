@@ -1,6 +1,7 @@
 import { selectionToClipboard } from './clipboard';
 import { EMPTY_LIST, contentTop, regionAt, type CellEnv, type CellRegion, type CellTarget, type DisplayList } from './display';
 import { ImageCache } from './images';
+import { SpriteAtlas } from './sprites';
 import { colX, createHit, hitTest, rowY } from './hittest';
 import { attachInteraction, type InteractionHost } from './interaction';
 import { buildColumnOffsets, computeViewport, createViewportRange } from './layout';
@@ -40,8 +41,12 @@ export interface Grid {
   readonly domLayer: HTMLDivElement;
   readonly element: HTMLDivElement;
   update(options: Partial<Omit<GridOptions, 'frameSource'>>): void;
-  /** Repaint the whole base layer, e.g. after the data was replaced. Auto row heights are re-measured. */
-  invalidate(): void;
+  /**
+   * Repaint the whole base layer, e.g. after the data was replaced. Auto row heights are
+   * re-measured unless `remeasure` is false (only appearance changed), which also keeps the
+   * scroll position exactly where it is.
+   */
+  invalidate(options?: { remeasure?: boolean }): void;
   /** Repaint one cell on the next frame. Cheap: only that cell's rectangle is painted. */
   invalidateCell(row: number, col: number): void;
   /** Repaint several cells, given as [row, col] pairs (`count` pairs, default all). */
@@ -128,7 +133,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     if (!cells) scheduler.mark(Dirty.Base);
     else for (let i = 0; i + 1 < cells.length; i += 2) markCell(cells[i]!, cells[i + 1]!);
   });
-  const cellPaint: CellPaint = { env, images, hover: null, pressed: null };
+  const sprites = new SpriteAtlas();
+  const cellPaint: CellPaint = { env, images, sprites, hover: null, pressed: null };
   const info: FrameInfo = {
     frame: 0, flags: 0, durationMs: 0, cellsPainted: 0, paint: 'none', blitX: 0, blitY: 0, rowsMeasured: 0,
     overlay: false,
@@ -796,8 +802,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       }
       store.setState(patch);
     },
-    invalidate() {
-      if (variable) heightsStale = true;
+    invalidate(o) {
+      if (variable && o?.remeasure !== false) heightsStale = true;
       env.epoch++;
       scheduler.mark(Dirty.Base);
     },
@@ -864,6 +870,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       clearTimeout(resyncTimer);
       unsubscribe();
       images.destroy();
+      sprites.clear();
       scheduler.destroy();
       surface.destroy();
     },

@@ -1,4 +1,5 @@
 import type { ImageCache } from './images';
+import type { SpriteAtlas } from './sprites';
 import type { TextMeasurer, TextWrapper } from './text';
 import type { ResolvedTheme } from './theme';
 import type { ColumnDef } from './types';
@@ -154,6 +155,7 @@ export function regionAt(list: DisplayList, x: number, y: number): number {
 export type OpContext = Pick<
   CanvasRenderingContext2D,
   | 'setTransform'
+  | 'scale'
   | 'fillRect'
   | 'beginPath'
   | 'rect'
@@ -212,8 +214,10 @@ const snapPx = (v: number, dpr: number) => Math.round(v * dpr) / dpr;
 
 /**
  * Paints one op with its cell's content box at (ox, oy), in a context whose transform is
- * `scale(dpr)`. Rectangles snap to device pixels. Returns false if the op is an image that is
- * not loaded yet (the caller arranges a repaint).
+ * `scale(dpr)`. Rectangles and text snap to device pixels. With an atlas, antialiased shapes
+ * (rounded or outlined rectangles, paths, images) are drawn once as sprites and copied at whole
+ * device pixels, so every paint path produces the same pixels. Returns false if the op is an
+ * image that is not loaded yet (the caller arranges a repaint).
  */
 export function paintOp(
   ctx: OpContext,
@@ -224,6 +228,7 @@ export function paintOp(
   state: OpState,
   style: StyleCache,
   images: ImageCache | null,
+  sprites: SpriteAtlas | null = null,
 ): boolean {
   const hovered = op.region !== undefined && op.region === state.hover;
   const variant = hovered ? (op.region === state.press ? (op.press ?? op.hover) : op.hover) : undefined;
@@ -238,28 +243,43 @@ export function paintOp(
   switch (op.k) {
     case 'rect': {
       const color = variant?.color ?? op.color;
-      const x0 = snapPx(x, dpr);
-      const y0 = snapPx(y, dpr);
-      const w = snapPx(x + op.w, dpr) - x0;
-      const h = snapPx(y + op.h, dpr) - y0;
-      if (w <= 0 || h <= 0) return true;
-      if (op.line) {
-        if (color !== style.stroke) ctx.strokeStyle = style.stroke = color;
-        ctx.lineWidth = op.line;
-        const i = op.line / 2;
-        ctx.beginPath();
-        roundRect(ctx, x0 + i, y0 + i, w - op.line, h - op.line, Math.max(0, (op.radius ?? 0) - i));
-        ctx.stroke();
-      } else {
+      // Device-pixel bounds.
+      const dx = Math.round(x * dpr);
+      const dy = Math.round(y * dpr);
+      const dw = Math.round((x + op.w) * dpr) - dx;
+      const dh = Math.round((y + op.h) * dpr) - dy;
+      if (dw <= 0 || dh <= 0) return true;
+      if (!op.line && !op.radius) {
         if (color !== style.fill) ctx.fillStyle = style.fill = color;
-        if (op.radius) {
-          ctx.beginPath();
-          roundRect(ctx, x0, y0, w, h, op.radius);
-          ctx.fill();
-        } else {
-          ctx.fillRect(x0, y0, w, h);
-        }
+        ctx.fillRect(dx / dpr, dy / dpr, dw / dpr, dh / dpr);
+        return true;
       }
+      const w = dw / dpr;
+      const h = dh / dpr;
+      const radius = op.radius ?? 0;
+      const line = op.line ?? 0;
+      const draw = (c: OpContext) => {
+        if (line) {
+          c.strokeStyle = color;
+          c.lineWidth = line;
+          const i = line / 2;
+          c.beginPath();
+          roundRect(c, i, i, w - line, h - line, Math.max(0, radius - i));
+          c.stroke();
+        } else {
+          c.fillStyle = color;
+          c.beginPath();
+          roundRect(c, 0, 0, w, h, radius);
+          c.fill();
+        }
+      };
+      const key = `r${dw},${dh},${radius},${line},${color}`;
+      if (drawSprite(ctx, sprites, key, dpr, dx, dy, dw, dh, 1, draw)) return true;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, dx, dy);
+      draw(ctx);
+      ctx.restore();
+      style.fill = style.stroke = '';
       return true;
     }
     case 'text': {
@@ -281,18 +301,30 @@ export function paintOp(
       const color = variant?.color ?? op.color;
       const sx = op.w / op.box;
       const sy = op.h / op.box;
+      const dx = Math.round(x * dpr);
+      const dy = Math.round(y * dpr);
+      const draw = (c: OpContext) => {
+        const cc = c as CanvasRenderingContext2D;
+        // The path's box scaled to the op's size, on top of the device scale.
+        cc.scale(sx, sy);
+        if (op.line) {
+          cc.strokeStyle = color;
+          cc.lineWidth = op.line / sx;
+          cc.lineCap = 'round';
+          cc.lineJoin = 'round';
+          cc.stroke(p);
+        } else {
+          cc.fillStyle = color;
+          cc.fill(p);
+        }
+      };
+      // Strokes reach half their width past the box; round caps a little more.
+      const pad = Math.ceil(((op.line ?? 0) * dpr) / 2) + 1;
+      const key = `p${op.w},${op.h},${op.line ?? 0},${color},${op.path}`;
+      if (drawSprite(ctx, sprites, key, dpr, dx, dy, op.w * dpr, op.h * dpr, pad, draw)) return true;
       ctx.save();
-      ctx.setTransform(dpr * sx, 0, 0, dpr * sy, snapPx(x, dpr) * dpr, snapPx(y, dpr) * dpr);
-      if (op.line) {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = op.line / sx;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        (ctx as CanvasRenderingContext2D).stroke(p);
-      } else {
-        ctx.fillStyle = color;
-        (ctx as CanvasRenderingContext2D).fill(p);
-      }
+      ctx.setTransform(dpr, 0, 0, dpr, dx, dy);
+      draw(ctx);
       ctx.restore();
       // restore() brings back the context's own fill and stroke, which may differ from the cache.
       style.fill = style.stroke = '';
@@ -301,18 +333,37 @@ export function paintOp(
     case 'image': {
       const img = images?.get(op.src);
       if (!img) return false;
-      const x0 = snapPx(x, dpr);
-      const y0 = snapPx(y, dpr);
-      const w = snapPx(x + op.w, dpr) - x0;
-      const h = snapPx(y + op.h, dpr) - y0;
+      const dx = Math.round(x * dpr);
+      const dy = Math.round(y * dpr);
+      const dw = Math.round((x + op.w) * dpr) - dx;
+      const dh = Math.round((y + op.h) * dpr) - dy;
+      if (dw <= 0 || dh <= 0) return true;
+      const w = dw / dpr;
+      const h = dh / dpr;
+      const draw = (c: OpContext) => {
+        const cc = c as CanvasRenderingContext2D;
+        cc.imageSmoothingEnabled = true;
+        if (!op.radius) {
+          cc.drawImage(img, 0, 0, w, h);
+          return;
+        }
+        // Rounded: fill the shape with the image as a pattern. A clip would also work, but clips
+        // on the atlas trip a Chromium GPU canvas bug that erases earlier sprites.
+        const pattern = cc.createPattern(img, 'no-repeat');
+        const iw = (img as { width: number }).width;
+        const ih = (img as { height: number }).height;
+        if (!pattern || !iw || !ih) return;
+        pattern.setTransform(new DOMMatrix([w / iw, 0, 0, h / ih, 0, 0]));
+        cc.fillStyle = pattern;
+        cc.beginPath();
+        roundRect(cc, 0, 0, w, h, op.radius);
+        cc.fill();
+      };
+      const key = `i${dw},${dh},${op.radius ?? 0},${op.src}`;
+      if (drawSprite(ctx, sprites, key, dpr, dx, dy, dw, dh, 1, draw)) return true;
       ctx.save();
-      if (op.radius) {
-        ctx.beginPath();
-        roundRect(ctx, x0, y0, w, h, op.radius);
-        ctx.clip();
-      }
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(img, x0, y0, w, h);
+      ctx.setTransform(dpr, 0, 0, dpr, dx, dy);
+      draw(ctx);
       ctx.restore();
       return true;
     }
@@ -327,7 +378,33 @@ export function paintOp(
   }
 }
 
-function roundRect(ctx: OpContext, x: number, y: number, w: number, h: number, r: number): void {
+/**
+ * Copies a sprite to device pixel (dx, dy), drawing it into the atlas first if needed. Returns
+ * false if there is no atlas or the sprite does not fit, and the caller draws directly.
+ */
+function drawSprite(
+  ctx: OpContext,
+  sprites: SpriteAtlas | null,
+  key: string,
+  dpr: number,
+  dx: number,
+  dy: number,
+  w: number,
+  h: number,
+  pad: number,
+  draw: (c: OpContext) => void,
+): boolean {
+  if (!sprites) return false;
+  const s = sprites.get(key, dpr, w, h, pad, draw);
+  const atlas = sprites.canvas;
+  if (!s || !atlas) return false;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(atlas, s.x, s.y, s.w, s.h, dx - s.pad, dy - s.pad, s.w, s.h);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return true;
+}
+
+function roundRect(ctx: Pick<OpContext, 'rect' | 'roundRect'>, x: number, y: number, w: number, h: number, r: number): void {
   const radius = Math.min(r, w / 2, h / 2);
   if (radius > 0 && ctx.roundRect) ctx.roundRect(x, y, w, h, radius);
   else ctx.rect(x, y, w, h);

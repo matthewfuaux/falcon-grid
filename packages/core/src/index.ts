@@ -74,6 +74,7 @@ export {
   type TextOp,
 } from './display';
 export { ImageCache } from './images';
+export { SpriteAtlas, type Sprite, type SpriteContext } from './sprites';
 export { FixedRows, VariableRows, type RowModel } from './rows';
 export { TextMeasurer, canvasMeasure, ELLIPSIS, type MeasureFn, type TextWrapper } from './text';
 export { LRU } from './lru';

@@ -10,7 +10,8 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 | 1. Core renderer: fixed-height read-only table              | done        |
 | 2. Text engine and variable row heights                     | done        |
 | 3. Interaction: selection, keyboard, resize, reorder, copy  | done        |
-| 4–7                                                         | not started |
+| 4. Declarative cells: primitives, display lists, built-ins  | done        |
+| 5–7                                                         | not started |
 
 ## Layout
 
@@ -18,6 +19,8 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 packages/core     framework-agnostic store, scheduler, layout, Canvas 2D renderer,
                   text measurement and truncation, row height model (zero deps)
 packages/text     optional wrapping engine over Pretext (needed for `wrap` columns)
+packages/cells    declarative cells: layout primitives, compiler to display lists,
+                  built-in column types (text, number, date, boolean, tags, link, user)
 tools/datagen     deterministic synthetic data (1M × 100 without materialising it)
 apps/playground   Vite playground for the core
 bench             competitor targets + Playwright benchmark harness
@@ -37,7 +40,7 @@ pnpm bench --target glide              # one competitor
 pnpm bench --target falcon --scenario scroll-y --rows 100000 --dpr 2
 ```
 
-Benchmark flags: `--target falcon,glide,vtable,tanstack`, `--scenario scroll-y,scroll-x,updates`, `--rows`, `--cols`, `--width`, `--height`, `--dpr`, `--budget`, `--headed`, `--software` (headless-shell software canvas instead of a GPU canvas via SwiftShader), `--save-trace`, `--no-build`, `--out`. Reports go to `bench/results/<timestamp>/report.md` and `results.json`. The first run needs `pnpm --filter @falcon-grid/bench exec playwright install chromium`.
+Benchmark flags: `--target falcon,glide,vtable,tanstack`, `--scenario scroll-y,scroll-x,updates,scroll-y-wrap,scroll-up-wrap,scroll-y-cells,scroll-x-cells`, `--rows`, `--cols`, `--width`, `--height`, `--dpr`, `--budget`, `--headed`, `--software` (headless-shell software canvas instead of a GPU canvas via SwiftShader), `--save-trace`, `--no-build`, `--out`. Reports go to `bench/results/<timestamp>/report.md` and `results.json`. The first run needs `pnpm --filter @falcon-grid/bench exec playwright install chromium`.
 
 ## Rendering
 
@@ -48,6 +51,13 @@ geometry changed, a scroll delta is not a whole number of device pixels, or more
 are dirty. Gridlines are filled one-device-pixel rectangles rather than strokes, so a partial
 repaint rasterises exactly like a full one; `pnpm test:e2e` checks that on software and GPU
 canvas at 1x, 1.5x and 2x.
+
+Antialiased shapes in declarative cells (rounded and outlined rectangles, icons, rounded images)
+are rasterised once into a sprite atlas and copied at whole device pixels. Drawing them
+directly is not reproducible: Chromium's software rasteriser changes antialiasing when a clip
+cuts through a path, and its GPU backend can rasterise a path differently in a one-cell repaint
+than in a full one. Text and plain rectangles are drawn directly. `custom` cells draw straight
+to the canvas and get no such guarantee.
 
 ## Wrapped text and auto row heights
 

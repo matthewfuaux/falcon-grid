@@ -165,8 +165,9 @@ async function diffImages(a: string, b: string) {
   return { diff, first, colors, box, total: x.data.length / 4 };
 }
 
+/** Repaints everything from scratch, keeping row measurements so the scroll position holds still. */
 function fullRepaint() {
-  grid.invalidate();
+  grid.invalidate({ remeasure: false });
   grid.flush();
 }
 

@@ -9,6 +9,7 @@ import {
   type OpState,
 } from './display';
 import type { ImageCache } from './images';
+import type { SpriteAtlas } from './sprites';
 import { indexAtOffset, type ViewportRange } from './layout';
 import type { RowModel } from './rows';
 import { ELLIPSIS, type TextMeasurer, type TextWrapper } from './text';
@@ -22,6 +23,8 @@ export type PaintContext = OpContext & { readonly canvas: CanvasImageSource };
 export interface CellPaint {
   env: CellEnv;
   images: ImageCache | null;
+  /** Antialiased shapes are drawn once here and copied, so every paint path matches. */
+  sprites?: SpriteAtlas | null;
   hover: CellTarget | null;
   pressed: CellTarget | null;
 }
@@ -606,7 +609,7 @@ export class BasePainter {
         const p = cp.pressed;
         state.hover = h && h.row === row && h.col === c ? h.region : -1;
         state.press = p && p.row === row && p.col === c ? p.region : -1;
-        if (!paintOp(ctx, op, x, this.listTops[i]!, dpr, state, style, cp.images) && op.k === 'image') {
+        if (!paintOp(ctx, op, x, this.listTops[i]!, dpr, state, style, cp.images, cp.sprites ?? null) && op.k === 'image') {
           cp.images?.want(op.src, row, c);
         }
       }
