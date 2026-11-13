@@ -1,0 +1,38 @@
+{
+  "name": "@falcon-grid/tanstack",
+  "version": "0.0.0",
+  "description": "Render a TanStack Table instance on the falcon-grid canvas.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/react": "workspace:*",
+    "@tanstack/table-core": "^8.0.0",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/react": "workspace:*",
+    "@tanstack/table-core": "8.21.3",
+    "@types/react": "^18.3.31",
+    "react": "18.3.1"
+  }
+}

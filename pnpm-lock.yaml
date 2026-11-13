@@ -17,6 +17,12 @@ importers:
       '@falcon-grid/datagen':
         specifier: workspace:*
         version: link:tools/datagen
+      '@falcon-grid/react':
+        specifier: workspace:*
+        version: link:packages/react
+      '@falcon-grid/tanstack':
+        specifier: workspace:*
+        version: link:packages/tanstack
       '@falcon-grid/text':
         specifier: workspace:*
         version: link:packages/text
@@ -26,12 +32,30 @@ importers:
       '@size-limit/preset-small-lib':
         specifier: ^11.2.0
         version: 11.2.0(size-limit@11.2.0)
+      '@tanstack/react-table':
+        specifier: 8.21.3
+        version: 8.21.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@tanstack/table-core':
+        specifier: 8.21.3
+        version: 8.21.3
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
+      '@types/react':
+        specifier: ^18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
       fast-check:
         specifier: ^4.3.0
         version: 4.10.2
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
       size-limit:
         specifier: ^11.2.0
         version: 11.2.0
@@ -135,6 +159,45 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/react:
+    devDependencies:
+      '@falcon-grid/cells':
+        specifier: workspace:*
+        version: link:../cells
+      '@falcon-grid/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/react':
+        specifier: ^18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
+
+  packages/tanstack:
+    devDependencies:
+      '@falcon-grid/core':
+        specifier: workspace:*
+        version: link:../core
+      '@falcon-grid/react':
+        specifier: workspace:*
+        version: link:../react
+      '@tanstack/table-core':
+        specifier: 8.21.3
+        version: 8.21.3
+      '@types/react':
+        specifier: ^18.3.31
+        version: 18.3.31
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
 
   packages/text:
     dependencies:

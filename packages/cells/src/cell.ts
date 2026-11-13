@@ -31,14 +31,14 @@ interface Slot {
  * depend only on that value: compiled layouts are cached by value identity and width. If a value
  * changes in place, `invalidateCell` drops its cached layout.
  */
-export function cell<T>(build: (value: T) => Child, options: CellOptions<T> = {}): CellRenderer {
+export function cell<T>(build: (value: T) => Child, options: CellOptions<T> = {}): CellRenderer<T> {
   const cache = new LRU<unknown, Slot>(options.cacheSize ?? 2000);
   const compiler = new Compiler();
   let env: CellEnv | null = null;
   let epoch = -1;
 
-  const compile = (value: unknown, width: number, e: CellEnv): DisplayList => {
-    const node = build(value as T);
+  const compile = (value: T, width: number, e: CellEnv): DisplayList => {
+    const node = build(value);
     return node ? compiler.compile(node, width, e) : EMPTY_LIST;
   };
 
@@ -65,7 +65,7 @@ export function cell<T>(build: (value: T) => Child, options: CellOptions<T> = {}
       return list;
     },
     text(value) {
-      return options.text ? options.text(value as T) : textOf(build(value as T));
+      return options.text ? options.text(value) : textOf(build(value));
     },
     forget(value) {
       cache.delete(value);

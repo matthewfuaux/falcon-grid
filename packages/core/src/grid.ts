@@ -29,6 +29,16 @@ export interface GridOptions extends GridEvents {
   textWrapper?: TextWrapper;
   /** Merged over the default theme. Use `themeFromCSSVariables` to read it from CSS. */
   theme?: Partial<Theme>;
+  /**
+   * The owner applies selection changes: clicks and keys fire `onSelectionChange` but leave the
+   * selection alone until `setSelection` is called (as a controlled React component does).
+   */
+  controlledSelection?: boolean;
+  /**
+   * The owner applies column changes: resizing and reordering fire `onColumnResize` and
+   * `onColumnReorder` but leave the columns alone until `update({ columns })` is called.
+   */
+  controlledColumns?: boolean;
   /** Called after every frame. For instrumentation; keep it cheap. */
   onFrame?: (info: Readonly<FrameInfo>) => void;
   /** Override the frame source (tests). */
@@ -41,6 +51,8 @@ export interface Grid {
   readonly domLayer: HTMLDivElement;
   readonly element: HTMLDivElement;
   update(options: Partial<Omit<GridOptions, 'frameSource'>>): void;
+  /** Read the latest state; `store.subscribe` to be told when it changes. */
+  getState(): GridState;
   /**
    * Repaint the whole base layer, e.g. after the data was replaced. Auto row heights are
    * re-measured unless `remeasure` is false (only appearance changed), which also keeps the
@@ -65,6 +77,11 @@ export interface Grid {
   setSelection(selection: readonly CellRange[], activeCell?: CellRef | null): void;
   /** Scroll the least distance that brings a cell fully into view (frozen axes don't scroll). */
   scrollToCell(row: number, col: number): void;
+  /**
+   * The scrolling body: the visible area outside the header, frozen rows and frozen columns,
+   * relative to the grid's top-left corner. Content over scrolling cells is clipped to it.
+   */
+  getBodyRect(): { x: number; y: number; width: number; height: number };
   /** A cell's rectangle relative to the grid's top-left corner, unclipped, or null if out of range. */
   getCellBounds(row: number, col: number): { x: number; y: number; width: number; height: number } | null;
   /** The selection as TSV and an HTML table (what Ctrl+C copies), or null if nothing is selected. */
@@ -83,32 +100,38 @@ const IDLE_AHEAD = 2000;
 /** Longest idle slice, so input arriving meanwhile is not held up. */
 const IDLE_SLICE_MS = 4;
 
-export function createGrid(container: HTMLElement, options: GridOptions): Grid {
-  let getCell = options.getCell;
-  let onFrame = options.onFrame;
-  let themePatch = options.theme;
-  let wrapper: TextWrapper | null = options.textWrapper ?? null;
-
-  const store = createStore<GridState>({
-    columns: options.columns,
-    rowCount: options.rowCount,
-    frozenColumns: options.frozenColumns ?? 0,
-    frozenRows: options.frozenRows ?? 0,
-    rowSizing: options.rowSizing ?? 'fixed',
+/** The state a grid starts in, before it is laid out. Also a stand-in until a grid exists. */
+export function initialGridState(o: Partial<Pick<GridOptions, 'columns' | 'rowCount' | 'frozenColumns' | 'frozenRows' | 'rowSizing' | 'theme'>> = {}): GridState {
+  return {
+    columns: o.columns ?? [],
+    rowCount: o.rowCount ?? 0,
+    frozenColumns: o.frozenColumns ?? 0,
+    frozenRows: o.frozenRows ?? 0,
+    rowSizing: o.rowSizing ?? 'fixed',
     scrollLeft: 0,
     scrollTop: 0,
     viewportWidth: 0,
     viewportHeight: 0,
     pixelRatio: 1,
-    theme: mergeTheme(defaultTheme, options.theme),
+    theme: mergeTheme(defaultTheme, o.theme),
     selection: [],
     activeCell: null,
     hoverCell: null,
     focused: false,
     hoverTarget: null,
     pressedTarget: null,
-  });
+  };
+}
+
+export function createGrid(container: HTMLElement, options: GridOptions): Grid {
+  let getCell = options.getCell;
+  let onFrame = options.onFrame;
+  let themePatch = options.theme;
+  let wrapper: TextWrapper | null = options.textWrapper ?? null;
+
+  const store = createStore<GridState>(initialGridState(options));
   const events: GridEvents = {};
+  const controlled = { selection: options.controlledSelection === true, columns: options.controlledColumns === true };
   const EVENT_KEYS = [
     'onCellClick', 'onCellDoubleClick', 'onCellContextMenu', 'onHeaderClick',
     'onSelectionChange', 'onColumnResize', 'onColumnReorder',
@@ -630,6 +653,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
 
   const host: InteractionHost = {
     element: surface.scroller,
+    domLayer: surface.domLayer,
+    controlledSelection: () => controlled.selection,
     store,
     events,
     hitTest: (x, y) => hitTest(x, y, live(), offsets, rows, store.getSnapshot().columns, hit),
@@ -647,14 +672,14 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       const columns = store.getSnapshot().columns.slice();
       const column = { ...columns[col]!, width };
       columns[col] = column;
-      store.setState({ columns });
+      if (!controlled.columns) store.setState({ columns });
       events.onColumnResize?.({ col, column, width, event });
     },
     moveColumn(from, to, event) {
       const columns = store.getSnapshot().columns.slice();
       const [column] = columns.splice(from, 1);
       columns.splice(to, 0, column!);
-      store.setState({ columns });
+      if (!controlled.columns) store.setState({ columns });
       events.onColumnReorder?.({ from, to, column: column!, event });
     },
     autoFitWidth(col) {
@@ -775,6 +800,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     store,
     domLayer: surface.domLayer,
     element: surface.scroller,
+    getState: () => store.getSnapshot(),
     update(o) {
       if (o.getCell && o.getCell !== getCell) {
         getCell = o.getCell;
@@ -789,6 +815,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
         scheduler.mark(Dirty.Base);
       }
       if ('onFrame' in o) onFrame = o.onFrame;
+      if (o.controlledSelection !== undefined) controlled.selection = o.controlledSelection;
+      if (o.controlledColumns !== undefined) controlled.columns = o.controlledColumns;
       setEvents(o);
       const patch: Partial<GridState> = {};
       if (o.columns) patch.columns = o.columns;
@@ -849,6 +877,10 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       store.setState(activeCell === undefined ? { selection } : { selection, activeCell });
     },
     scrollToCell,
+    getBodyRect() {
+      const v = live();
+      return { x: v.frozenWidth, y: v.bodyTop, width: Math.max(0, v.width - v.frozenWidth), height: Math.max(0, v.height - v.bodyTop) };
+    },
     getCellBounds(row, col) {
       const s = store.getSnapshot();
       if (row < 0 || row >= rows.count || col < 0 || col >= s.columns.length) return null;

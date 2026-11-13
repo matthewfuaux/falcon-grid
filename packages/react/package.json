@@ -1,0 +1,38 @@
+{
+  "name": "@falcon-grid/react",
+  "version": "0.0.0",
+  "description": "React component for falcon-grid: a canvas table that keeps React out of the frame loop.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@falcon-grid/core": "workspace:*",
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@falcon-grid/cells": "workspace:*",
+    "@falcon-grid/core": "workspace:*",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

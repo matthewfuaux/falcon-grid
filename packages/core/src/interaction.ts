@@ -21,6 +21,10 @@ import type { CellRange, CellRef, ColumnDef, GridEvents, GridState } from './typ
 /** What the interaction layer needs from the grid. */
 export interface InteractionHost {
   element: HTMLElement;
+  /** DOM overlay above the canvases: pointer events from inside it belong to its content. */
+  domLayer: HTMLElement;
+  /** The owner applies selection changes (controlled): user changes only fire the event. */
+  controlledSelection(): boolean;
   store: Store<GridState>;
   events: GridEvents;
   /** Hit-tests a point in viewport CSS pixels against the current geometry. */
@@ -103,7 +107,7 @@ export function attachInteraction(host: InteractionHost): () => void {
       s.activeCell === activeCell ||
       (s.activeCell && activeCell && s.activeCell.row === activeCell.row && s.activeCell.col === activeCell.col);
     if (sameActive && sameRanges(s.selection, selection)) return;
-    store.setState({ selection, activeCell });
+    if (!host.controlledSelection()) store.setState({ selection, activeCell });
     host.events.onSelectionChange?.({ selection, activeCell, event });
   };
 
@@ -485,15 +489,22 @@ export function attachInteraction(host: InteractionHost): () => void {
     store.setState({ focused: false });
   };
 
+  /** Events from DOM overlay content (an editor, a menu) are that content's, not the grid's. */
+  const own = <E extends Event>(fn: (e: E) => void) => (e: Event) => {
+    const t = e.target as Node | null;
+    if (t !== el && t && host.domLayer.contains(t)) return;
+    fn(e as E);
+  };
+
   const listeners: [EventTarget, string, EventListener][] = [
-    [el, 'pointerdown', onPointerDown as EventListener],
+    [el, 'pointerdown', own(onPointerDown)],
     [el, 'pointermove', onPointerMove as EventListener],
     [el, 'pointerup', onPointerUp as EventListener],
     [el, 'pointercancel', onPointerCancel as EventListener],
     [el, 'pointerleave', onPointerLeave],
-    [el, 'click', onClick as EventListener],
-    [el, 'dblclick', onDoubleClick as EventListener],
-    [el, 'contextmenu', onContextMenu as EventListener],
+    [el, 'click', own(onClick)],
+    [el, 'dblclick', own(onDoubleClick)],
+    [el, 'contextmenu', own(onContextMenu)],
     [el, 'scroll', onScroll],
     [el, 'keydown', onKeyDown as EventListener],
     [el, 'focus', onFocus],

@@ -11,7 +11,8 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 | 2. Text engine and variable row heights                     | done        |
 | 3. Interaction: selection, keyboard, resize, reorder, copy  | done        |
 | 4. Declarative cells: primitives, display lists, built-ins  | done        |
-| 5–7                                                         | not started |
+| 5. React API and TanStack adapter                           | done        |
+| 6–7                                                         | not started |
 
 ## Layout
 
@@ -21,10 +22,47 @@ packages/core     framework-agnostic store, scheduler, layout, Canvas 2D rendere
 packages/text     optional wrapping engine over Pretext (needed for `wrap` columns)
 packages/cells    declarative cells: layout primitives, compiler to display lists,
                   built-in column types (text, number, date, boolean, tags, link, user)
+packages/react    <Grid>, hooks, imperative handle, DOM overlays and a reference editor
+packages/tanstack useCanvasTable(table): renders a TanStack Table instance on the canvas
 tools/datagen     deterministic synthetic data (1M × 100 without materialising it)
 apps/playground   Vite playground for the core
 bench             competitor targets + Playwright benchmark harness
 ```
+
+## React
+
+```tsx
+import { Grid, columnHelper } from '@falcon-grid/react';
+
+const col = columnHelper<Person>();
+const columns = [
+  col.accessor('name', { title: 'Name', width: 200 }),
+  col.accessor((p) => p, { id: 'user', title: 'User', cell: userCell }), // userCell: CellRenderer<Person>
+];
+
+const getRow = useCallback((i: number) => people[i], [people]);
+<Grid rowCount={people.length} columns={columns} getRow={getRow} rowHeight="auto" frozenColumns={1} />;
+```
+
+React stays out of the frame loop: scrolling and hovering never render. Columns are compared
+structurally, so an inline array is fine; `getRow`'s identity is the data-change signal, so
+memoise it (or call `invalidateRows` on the handle for changes in place). Selection, column
+widths, column order and scroll position each work controlled (`selection` +
+`onSelectionChange`) or uncontrolled (`defaultSelection`). `useGridState(selector)` subscribes
+a component to a slice of grid state, `<CellOverlay>` positions DOM over a cell, and
+`onCellEdit` turns on the reference text editor (double-click, Enter, F2 or typing).
+
+With TanStack Table, only the render layer changes:
+
+```tsx
+import { useCanvasTable } from '@falcon-grid/tanstack';
+
+const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
+return <Grid {...useCanvasTable(table)} />;
+```
+
+Sizing, ordering, left pinning (as frozen columns) and sorting map both ways. Columns opt in to
+declarative cells with `meta: { canvasCell }`; others draw their value as text.
 
 ## Commands
 
@@ -32,7 +70,7 @@ bench             competitor targets + Playwright benchmark harness
 pnpm install
 pnpm dev                               # playground at http://localhost:5173
 pnpm test                              # unit tests (Vitest, fast-check)
-pnpm test:e2e                          # browser tests: incremental paint == full repaint, pixel for pixel
+pnpm test:e2e                          # browser tests: paint correctness, interaction, React and TanStack
 pnpm typecheck
 pnpm size                              # build + gzip budgets (fails over budget)
 pnpm bench                             # all targets × all scenarios

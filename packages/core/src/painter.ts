@@ -633,7 +633,10 @@ export class BasePainter {
       const right = offsets[c + 1]! - r.colShift;
       const clipLeft = Math.max(left, r.x0);
       const clipRight = Math.min(right, r.x1);
-      const avail = right - left - 2 * theme.cellPaddingX;
+      const sorted = col.sort === 'asc' || col.sort === 'desc';
+      // A sorted column keeps room for the arrow at its right edge.
+      const arrowRoom = sorted ? SORT_ARROW_WIDTH + SORT_ARROW_GAP : 0;
+      const avail = right - left - 2 * theme.cellPaddingX - arrowRoom;
       if (clipRight <= clipLeft || avail <= 0) continue;
       const align = col.align ?? 'left';
       ctx.textAlign = align;
@@ -641,9 +644,29 @@ export class BasePainter {
       ctx.beginPath();
       ctx.rect(clipLeft, r.y0, clipRight - clipLeft, r.y1 - r.y0);
       ctx.clip();
-      ctx.fillText(text.fit(title, theme.headerFont, avail), snap(textX(align, left, right, theme.cellPaddingX), dpr), y);
+      ctx.fillText(text.fit(title, theme.headerFont, avail), snap(textX(align, left, right - arrowRoom, theme.cellPaddingX), dpr), y);
+      if (sorted) paintSortArrow(ctx, right - theme.cellPaddingX - SORT_ARROW_WIDTH, vp.headerHeight / 2, col.sort === 'asc', dpr);
       ctx.restore();
     }
+  }
+}
+
+const SORT_ARROW_WIDTH = 8;
+const SORT_ARROW_GAP = 4;
+
+/**
+ * A small filled triangle, pointing up for ascending. Built from one-device-pixel rows of
+ * rectangles instead of a path, so it rasterises identically in a header strip and a full
+ * repaint (paths do not: antialiasing changes where clips cut them).
+ */
+function paintSortArrow(ctx: PaintContext, x: number, cy: number, up: boolean, dpr: number): void {
+  const rows = Math.max(3, Math.round((SORT_ARROW_WIDTH / 2) * dpr));
+  const x0 = Math.round(x * dpr);
+  const y0 = Math.round(cy * dpr - rows / 2);
+  const full = rows * 2 - 1;
+  for (let i = 0; i < rows; i++) {
+    const w = up ? 2 * i + 1 : full - 2 * i;
+    ctx.fillRect((x0 + (full - w) / 2) / dpr, (y0 + i) / dpr, w / dpr, 1 / dpr);
   }
 }
 

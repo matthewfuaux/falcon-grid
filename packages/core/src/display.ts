@@ -119,13 +119,13 @@ export interface CellEnv {
  * Draws a column's cells from display lists instead of as text. Build one with `cell()` from
  * `@falcon-grid/cells`, or implement it directly.
  */
-export interface CellRenderer {
+export interface CellRenderer<T = unknown> {
   /** The display list for a value at a content width. Called per visible cell; cache it. */
-  layout(value: unknown, width: number, env: CellEnv): DisplayList;
+  layout(value: T, width: number, env: CellEnv): DisplayList;
   /** Plain text for copying. */
-  text(value: unknown): string;
+  text(value: T): string;
   /** The value changed in place (same identity): drop anything cached for it. */
-  forget?(value: unknown): void;
+  forget?(value: T): void;
 }
 
 /** A cell region under interaction: hovered or pressed. */

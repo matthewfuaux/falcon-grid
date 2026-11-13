@@ -1,4 +1,4 @@
-export { createGrid, type Grid, type GridOptions } from './grid';
+export { createGrid, initialGridState, type Grid, type GridOptions } from './grid';
 export { createStore, type Store, type Listener } from './store';
 export { createScheduler, Dirty, type Scheduler, type FrameSource } from './scheduler';
 export {

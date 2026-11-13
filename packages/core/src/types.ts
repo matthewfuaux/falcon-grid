@@ -33,6 +33,8 @@ export interface ColumnDef {
   resizable?: boolean;
   /** Allow drag reordering (default true). */
   reorderable?: boolean;
+  /** Sort indicator drawn in the header. The grid does not sort; it shows what the data source did. */
+  sort?: 'asc' | 'desc' | null;
   /**
    * Draw cells from a display list instead of as text: layout primitives, images and
    * interactive regions. See `cell()` and the built-in column types in `@falcon-grid/cells`.

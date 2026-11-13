@@ -25,5 +25,41 @@
     ],
     "limit": "42 kB",
     "gzip": true
+  },
+  {
+    "name": "@falcon-grid/react (core excluded)",
+    "path": "packages/react/dist/index.js",
+    "import": "*",
+    "ignore": [
+      "@falcon-grid/core",
+      "react",
+      "react-dom"
+    ],
+    "limit": "6 kB",
+    "gzip": true
+  },
+  {
+    "name": "core + react + cells",
+    "ignore": [
+      "react",
+      "react-dom",
+      "@falcon-grid/core"
+    ],
+    "limit": "40 kB",
+    "gzip": true,
+    "path": "tools/size-stack.js"
+  },
+  {
+    "name": "@falcon-grid/tanstack (react and core excluded)",
+    "path": "packages/tanstack/dist/index.js",
+    "import": "*",
+    "ignore": [
+      "@falcon-grid/core",
+      "@falcon-grid/react",
+      "@tanstack/table-core",
+      "react"
+    ],
+    "limit": "1 kB",
+    "gzip": true
   }
 ]

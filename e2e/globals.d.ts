@@ -19,6 +19,19 @@ declare global {
     columns: import('@falcon-grid/core').ColumnDef[];
     diffImages(a: string, b: string): Promise<Compare>;
     fullRepaint(): void;
+    // React fixture (react.html).
+    handle: import('@falcon-grid/react').GridHandle;
+    /** React Profiler commits so far. */
+    commits: number;
+    /** Re-renders the app with a fresh inline `columns` array. */
+    rerender(): void;
+    /** Committed edits: [row, column id, value]. */
+    edits: [number, string, string][];
+    /** Controlled mode: ignore the next selection changes (the owner keeps its selection). */
+    rejectSelection: boolean;
+    selectionChanges: number;
+    consoleErrors: string[];
+    table: import('@tanstack/table-core').Table<number>;
   }
 }
 
