@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Falcon Grid Log Viewer</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <nav class="nav"><a href="/">Grid</a> <strong>Logs</strong> <a href="/chat.html">Chat</a></nav>
+      <label><input id="tail" type="checkbox" checked /> Live tail (200 lines/s)</label>
+      <label><input id="wrap" type="checkbox" /> Wrap long lines</label>
+      <label>Find <input id="find" type="search" placeholder="text in a line" /></label>
+      <button id="next" type="button">Next</button>
+      <button id="bottom" type="button" hidden>Jump to latest</button>
+      <output id="stats" class="stats"></output>
+    </header>
+    <main id="list" class="grid"></main>
+    <script type="module" src="/src/logs.ts"></script>
+  </body>
+</html>

@@ -100,6 +100,28 @@ describe('VariableRows', () => {
     expect(rows.rowAt(60)).toBe(3);
   });
 
+  it('inserts rows, moving measurements with their rows', () => {
+    const rows = new VariableRows(5, 20);
+    rows.setHeight(0, 50);
+    rows.setHeight(4, 70);
+    rows.commit();
+    rows.insert(0, 3);
+    expect(rows.count).toBe(8);
+    expect(rows.isMeasured(0)).toBe(false);
+    expect(rows.heightOf(3)).toBe(50);
+    expect(rows.heightOf(7)).toBe(70);
+    expect(rows.offsetOf(3)).toBe(60);
+    expect(rows.total).toBe(6 * 20 + 50 + 70);
+    expect(rows.changedIn(0, 1)).toBe(true);
+    rows.insert(8, 2); // append
+    expect(rows.count).toBe(10);
+    expect(rows.heightOf(7)).toBe(70);
+    rows.insert(4, 1); // middle
+    expect(rows.heightOf(3)).toBe(50);
+    expect(rows.heightOf(8)).toBe(70);
+    expect(rows.rowAt(rows.offsetOf(8))).toBe(8);
+  });
+
   it('matches a naive model under random operations (property)', () => {
     type Op = { kind: 'set'; row: number; h: number } | { kind: 'unset'; row: number } | { kind: 'est'; h: number };
     const n = 64;

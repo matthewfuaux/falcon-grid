@@ -15,6 +15,7 @@ import {
   type GridDims,
 } from './selection';
 import type { CellRegion, CellTarget } from './display';
+import type { GridPlugin } from './plugin';
 import type { Store } from './store';
 import type { CellRange, CellRef, ColumnDef, GridEvents, GridState } from './types';
 
@@ -53,6 +54,7 @@ export interface InteractionHost {
   controls(cell: CellRef): number[];
   focusControl(cell: CellRef): boolean;
   announce(message: string): void;
+  plugins: readonly GridPlugin[];
 }
 
 /** Pointer travel before a header press becomes a column drag, in CSS pixels. */
@@ -67,7 +69,9 @@ type Mode =
   | { kind: 'header'; col: number; startX: number }
   | { kind: 'reorder'; col: number; drop: number }
   /** A clickable cell region is held down. */
-  | { kind: 'press'; target: CellTarget };
+  | { kind: 'press'; target: CellTarget }
+  /** A plugin owns the drag. */
+  | { kind: 'plugin'; plugin: GridPlugin };
 
 /** Width change per Alt+Shift+Arrow press, in CSS pixels. */
 const KEY_RESIZE_STEP = 8;
@@ -223,10 +227,10 @@ export function attachInteraction(host: InteractionHost): () => void {
 
   const tickAutoScroll = () => {
     autoScroll = 0;
-    if (mode.kind !== 'select' && mode.kind !== 'reorder') return;
+    if (mode.kind !== 'select' && mode.kind !== 'reorder' && mode.kind !== 'plugin') return;
     const { vp } = host.viewport();
     const vx = edgeVelocity(lastX, vp.frozenWidth, vp.width);
-    const vy = mode.kind === 'select' ? edgeVelocity(lastY, vp.bodyTop, vp.height) : 0;
+    const vy = mode.kind !== 'reorder' ? edgeVelocity(lastY, vp.bodyTop, vp.height) : 0;
     if (vx === 0 && vy === 0) return;
     host.scrollBy(vx, vy);
     move(null);
@@ -256,6 +260,16 @@ export function attachInteraction(host: InteractionHost): () => void {
         store.setState({ hoverTarget: t.target, pressedTarget: t.target });
         el.setPointerCapture?.(e.pointerId);
         return;
+      }
+    }
+    if (e.button === 0 && hit.region === 'cell') {
+      for (const plugin of host.plugins) {
+        if (plugin.pointerDown?.(e, lastX, lastY, hit)) {
+          e.preventDefault();
+          mode = { kind: 'plugin', plugin };
+          el.setPointerCapture?.(e.pointerId);
+          return;
+        }
       }
     }
     if (e.button === 2) {
@@ -323,6 +337,11 @@ export function attachInteraction(host: InteractionHost): () => void {
         dragged = true;
         dragSelect(ev);
         startAutoScroll();
+        return;
+      case 'plugin':
+        dragged = true;
+        mode.plugin.pointerMove?.(lastX, lastY);
+        startAutoScroll();
     }
   };
 
@@ -348,6 +367,7 @@ export function attachInteraction(host: InteractionHost): () => void {
       }
     }
     if (m.kind === 'resize' || m.kind === 'reorder') host.setDrag({ kind: 'none' });
+    if (m.kind === 'plugin') m.plugin.pointerUp?.(commit);
     if (m.kind === 'press') {
       const over = sameTarget(store.getSnapshot().hoverTarget, m.target);
       store.setState({ pressedTarget: null });
@@ -462,6 +482,12 @@ export function attachInteraction(host: InteractionHost): () => void {
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (!host.isKeyTarget(e.target)) return;
+    for (const p of host.plugins) {
+      if (p.keyDown?.(e)) {
+        e.preventDefault();
+        return;
+      }
+    }
     if (e.altKey && !e.shiftKey) return;
     if (mode.kind !== 'none') {
       if (e.key === 'Escape') {

@@ -133,6 +133,8 @@ export function createMirror(host: MirrorHost): Mirror {
   let lastSummary = '';
   let summaryTimer: ReturnType<typeof setTimeout> | undefined;
   let synced = false;
+  /** aria-rowindex of row 0: 2 below the header row, 1 when there is no header (a list). */
+  let rowBase = 2;
 
   const cellOf = (t: EventTarget | null): HTMLElement | null =>
     t instanceof win.HTMLElement && root.contains(t) ? t.closest<HTMLElement>('[role="gridcell"]') : null;
@@ -206,7 +208,7 @@ export function createMirror(host: MirrorHost): Mirror {
   const newRow = (row: number): RowEl => {
     const el = doc.createElement('div');
     el.setAttribute('role', 'row');
-    el.setAttribute('aria-rowindex', String(row + 2));
+    el.setAttribute('aria-rowindex', String(row + rowBase));
     return { el, cells: new Map() };
   };
 
@@ -241,17 +243,21 @@ export function createMirror(host: MirrorHost): Mirror {
     const s = store.getSnapshot();
     const w = host.window();
     const f = focusCell();
-    root.setAttribute('aria-rowcount', String(s.rowCount + 1));
+    const headed = s.theme.headerHeight > 0;
+    rowBase = headed ? 2 : 1;
+    header.hidden = !headed;
+    root.setAttribute('aria-rowcount', String(s.rowCount + rowBase - 1));
     root.setAttribute('aria-colcount', String(s.columns.length));
     element.tabIndex = f ? -1 : 0;
     const rows = span(w.frozenRows, w.rowStart, w.rowEnd, f?.row ?? -1, s.rowCount);
     const cols = span(w.frozenColumns, w.colStart, w.colEnd, f?.col ?? -1, s.columns.length);
     const colSet = new Set(cols);
+    const headCols = headed ? cols : [];
 
     // Header: one columnheader per mirrored column, with the sort state.
-    for (const [c, h] of headEls) if (!colSet.has(c)) (h.el.remove(), headEls.delete(c));
+    for (const [c, h] of headEls) if (!headed || !colSet.has(c)) (h.el.remove(), headEls.delete(c));
     const heads: HTMLElement[] = [];
-    for (const c of cols) {
+    for (const c of headCols) {
       const column = s.columns[c]!;
       let h = headEls.get(c);
       if (!h) {
@@ -299,6 +305,8 @@ export function createMirror(host: MirrorHost): Mirror {
       if (!re) {
         re = newRow(r);
         rowEls.set(r, re);
+      } else if (re.el.getAttribute('aria-rowindex') !== String(r + rowBase)) {
+        re.el.setAttribute('aria-rowindex', String(r + rowBase));
       }
       for (const [c, ce] of re.cells) if (!colSet.has(c)) (ce.el.remove(), re.cells.delete(c));
       const cellList: HTMLElement[] = [];

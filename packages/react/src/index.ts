@@ -18,6 +18,8 @@ export {
   type GridRef,
   type GridSelection,
 } from './handle';
+export { List, type ListHandle, type ListProps } from './list';
+export type { ListItemEvent } from '@falcon-grid/list';
 export { CellOverlay, TextEditor, type CellOverlayProps, type EditMove, type EditorProps } from './overlay';
 // Core types React users commonly need, so they need not import the core directly.
 export type { CellRange, CellRef, GridState, Theme } from '@falcon-grid/core';

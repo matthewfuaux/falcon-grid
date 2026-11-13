@@ -90,11 +90,20 @@ The default theme passes WCAG AA, checked in `packages/core/test/theme.test.ts`:
 4.5:1 (including badge labels on their tint and text on the selection), the focus ring and
 selection border at least 3:1.
 
+## List mode
+
+`<List>` and `createList` use the same mirror with one column and no header row: rows are
+numbered from 1 and `aria-rowcount` is the item count. Sticky group headers are painted copies
+of the header item, which is mirrored once, in its place. Text selection is a pointer feature,
+plus Ctrl/Cmd+A. Ctrl/Cmd+C copies the selected text, or the active item when nothing is
+selected.
+
 ## Automated checks
 
 - `e2e/a11y.spec.ts` runs axe on the mirror (plain, declarative cells, frozen panes), asserts the
   accessibility tree with an ARIA snapshot, and covers focus, keyboard paths, controls, search
   and display settings.
+- `e2e/list.spec.ts` checks the list's mirror (no header row, true item count).
 - `packages/core/test/theme.test.ts` checks theme contrast.
 
 ## Manual audit
@@ -118,6 +127,12 @@ column with Edit and Delete buttons, and a Done checkbox column).
    Ctrl+C, then paste into a text editor: the cells arrive as tab-separated text.
 8. Resize and move a column with Alt+Shift+arrows. The width and position are announced.
 9. Browse mode: read the table with the screen reader's table commands (e.g. NVDA Ctrl+Alt+arrows).
+
+**List mode** (open `/list.html?groups&bottom` on the same server):
+
+10. Tab to the list. Its name and the item under focus are announced; there is no header row.
+11. Arrow up through several items, across a sticky day header. Each item's text is read.
+12. Ctrl+A, then Ctrl+C, then paste: the transcript arrives as plain text, one item per line.
 
 **Results**
 

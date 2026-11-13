@@ -292,11 +292,13 @@ export class Compiler {
     this.ops.push(op);
   }
 
-  private textOp(s: string, font: string, color: string, x: number, y: number, w: number, h: number, align: string, region?: number, hover?: OpStyle) {
+  private textOp(s: string, font: string, color: string, x: number, y: number, w: number, h: number, align: string, region?: number, hover?: OpStyle, soft?: boolean) {
     if (!s) return;
     const tw = this.textWidth(s, font);
     const tx = align === 'right' ? x + w - tw : align === 'center' ? x + (w - tw) / 2 : x;
-    this.op({ k: 'text', x: tx, y, w: tw, h, text: s, font, color }, region, hover);
+    const op: DrawOp = { k: 'text', x: tx, y, w: tw, h, text: s, font, color };
+    if (soft) op.soft = true;
+    this.op(op, region, hover);
   }
 
   private iconOp(def: IconNode['icon'], x: number, y: number, size: number, color: string, region?: number, hover?: OpStyle) {
@@ -354,7 +356,7 @@ export class Compiler {
           for (let i = 0; i < count; i++) {
             let line = lines[i]!;
             if (i === count - 1 && count < lines.length) line = this.env.text.fit(line + ELLIPSIS, font, w);
-            this.textOp(line, font, color, x, top + i * lh, w, lh, align, region);
+            this.textOp(line, font, color, x, top + i * lh, w, lh, align, region, undefined, i > 0);
           }
         } else {
           const s = n.truncate === false ? n.text : this.env.text.fit(n.text, font, Math.max(0, w));

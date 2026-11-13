@@ -83,3 +83,5 @@ export { TextMeasurer, canvasMeasure, ELLIPSIS, type MeasureFn, type TextWrapper
 export { LRU } from './lru';
 export { ScrollAxis } from './scroll';
 export { createMirror, type Mirror, type MirrorHost } from './a11y';
+export type { GridPlugin, GridPluginFactory, GridPluginHost } from './plugin';
+export { colX, rowY, type Hit, type HitRegion } from './hittest';

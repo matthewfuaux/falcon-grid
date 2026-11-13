@@ -1,0 +1,32 @@
+{
+  "name": "@falcon-grid/list",
+  "version": "0.0.0",
+  "description": "List mode for falcon-grid: a one-column canvas list with auto-height items, stick to bottom, sticky group headers and text selection.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "types": "./dist/index.d.ts"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@falcon-grid/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@falcon-grid/cells": "workspace:*",
+    "@falcon-grid/core": "workspace:*"
+  }
+}

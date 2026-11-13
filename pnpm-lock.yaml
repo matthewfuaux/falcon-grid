@@ -20,6 +20,9 @@ importers:
       '@falcon-grid/datagen':
         specifier: workspace:*
         version: link:tools/datagen
+      '@falcon-grid/list':
+        specifier: workspace:*
+        version: link:packages/list
       '@falcon-grid/react':
         specifier: workspace:*
         version: link:packages/react
@@ -86,10 +89,31 @@ importers:
       '@falcon-grid/datagen':
         specifier: workspace:*
         version: link:../../tools/datagen
+      '@falcon-grid/list':
+        specifier: workspace:*
+        version: link:../../packages/list
+      '@falcon-grid/react':
+        specifier: workspace:*
+        version: link:../../packages/react
       '@falcon-grid/text':
         specifier: workspace:*
         version: link:../../packages/text
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      '@types/react':
+        specifier: ^18.3.31
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
       vite:
         specifier: ^7.3.8
         version: 7.3.8(@types/node@24.19.2)(jiti@2.7.0)(tsx@4.23.15)
@@ -163,6 +187,15 @@ importers:
 
   packages/core: {}
 
+  packages/list:
+    devDependencies:
+      '@falcon-grid/cells':
+        specifier: workspace:*
+        version: link:../cells
+      '@falcon-grid/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/react:
     devDependencies:
       '@falcon-grid/cells':
@@ -171,6 +204,9 @@ importers:
       '@falcon-grid/core':
         specifier: workspace:*
         version: link:../core
+      '@falcon-grid/list':
+        specifier: workspace:*
+        version: link:../list
       '@types/react':
         specifier: ^18.3.31
         version: 18.3.31

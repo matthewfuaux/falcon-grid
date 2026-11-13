@@ -230,6 +230,17 @@ export class BasePainter {
     return r;
   }
 
+  /**
+   * Paints what `input.vp` puts in the band [y0, y1) (CSS pixels, full width) into `input.ctx`,
+   * leaving what this painter remembers about its own canvas alone. Used to draw a row
+   * somewhere else, like a sticky header on the overlay.
+   */
+  paintBand(input: PaintInput, y0: number, y1: number): number {
+    this.areaCount = 0;
+    this.pushCssArea(0, y0, input.vp.width, y1, input.dpr);
+    return this.areaCount > 0 ? this.paintAreas(input) : 0;
+  }
+
   private remember(input: PaintInput): void {
     const { vp, rows } = input;
     this.valid = true;

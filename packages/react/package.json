@@ -17,7 +17,9 @@
     },
     "types": "./dist/index.d.ts"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc -p tsconfig.json"
@@ -25,11 +27,13 @@
   "peerDependencies": {
     "@falcon-grid/core": "workspace:*",
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "@falcon-grid/list": "workspace:*"
   },
   "devDependencies": {
     "@falcon-grid/cells": "workspace:*",
     "@falcon-grid/core": "workspace:*",
+    "@falcon-grid/list": "workspace:*",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "react": "18.3.1",

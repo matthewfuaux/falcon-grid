@@ -156,6 +156,21 @@ export class VariableRows implements RowModel {
     if (count === this.n) return;
     const heights = new Float32Array(count);
     heights.set(this.heights.subarray(0, Math.min(count, this.n)));
+    this.rebuild(heights);
+  }
+
+  /** Inserts `count` unmeasured rows before `index`; measurements move with their rows. O(n). */
+  insert(index: number, count: number): void {
+    if (count <= 0) return;
+    const at = Math.max(0, Math.min(index, this.n));
+    const heights = new Float32Array(this.n + count);
+    heights.set(this.heights.subarray(0, at));
+    heights.set(this.heights.subarray(at), at + count);
+    this.rebuild(heights);
+  }
+
+  private rebuild(heights: Float32Array): void {
+    const count = heights.length;
     this.n = count;
     this.heights = heights;
     this.sum = new Float64Array(count + 1);

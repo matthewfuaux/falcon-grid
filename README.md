@@ -13,7 +13,7 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 | 4. Declarative cells: primitives, display lists, built-ins  | done                                     |
 | 5. React API and TanStack adapter                           | done                                     |
 | 6. Accessibility: ARIA mirror, focus, keyboard, search      | done; manual screen reader audit pending |
-| 7                                                           | not started                              |
+| 7. List mode and launch                                     | list mode, migration guides, benchmark page and contributor setup done; docs site, release process and launch not started |
 
 ## Layout
 
@@ -23,10 +23,11 @@ packages/core     framework-agnostic store, scheduler, layout, Canvas 2D rendere
 packages/text     optional wrapping engine over Pretext (needed for `wrap` columns)
 packages/cells    declarative cells: layout primitives, compiler to display lists,
                   built-in column types (text, number, date, boolean, tags, link, user)
-packages/react    <Grid>, hooks, imperative handle, DOM overlays and a reference editor
+packages/list     list mode: createList, stick to bottom, sticky group headers, text selection
+packages/react    <Grid>, <List>, hooks, imperative handles, DOM overlays and a reference editor
 packages/tanstack useCanvasTable(table): renders a TanStack Table instance on the canvas
 tools/datagen     deterministic synthetic data (1M × 100 without materialising it)
-apps/playground   Vite playground for the core
+apps/playground   Vite playground: the grid, a 1M-line log viewer and a streaming chat
 bench             competitor targets + Playwright benchmark harness
 ```
 
@@ -75,6 +76,40 @@ return <Grid {...useCanvasTable(table)} />;
 Sizing, ordering, left pinning (as frozen columns) and sorting map both ways. Columns opt in to
 declarative cells with `meta: { canvasCell }`; others draw their value as text.
 
+## Lists
+
+`<List>` is the same engine with one full-width column and no header, for chat, logs and
+feeds. Items are declarative cells (or text) of any height. It sticks to the bottom while
+scrolled there, keeps the view still when older items are prepended, pins sticky group headers,
+and selects and copies text across items.
+
+```tsx
+import { List } from "@falcon-grid/react";
+
+<List
+  itemCount={messages.length}
+  getItem={getMessage}
+  itemKey={(i) => messages[i].id} // recognises prepends
+  item={messageCell}
+  groupOf={(i) => dayHeaderOf[i]} // sticky day headers
+  textWrapper={wrapper}
+  stickToBottom
+  aria-label="Conversation"
+/>;
+```
+
+The core version is `createList` from `@falcon-grid/list`. See [`docs/list.md`](./docs/list.md),
+and the playground's log viewer (`/logs.html`) and chat (`/chat.html`).
+
+## Docs
+
+- [List mode](./docs/list.md)
+- [Accessibility](./docs/accessibility.md)
+- [Benchmarks](./docs/benchmarks.md): method, hardware, results against Glide Data Grid, VTable and TanStack Table
+- [Migrating from Glide Data Grid](./docs/migrating-from-glide.md)
+- [Moving a TanStack Table from DOM to canvas](./docs/migrating-from-tanstack.md)
+- [Architecture](./docs/architecture.md), [contributing](./CONTRIBUTING.md), [starter issues](./docs/starter-issues.md)
+
 ## Accessibility
 
 A transparent DOM mirror gives screen readers a real `role="grid"` with true row and column
@@ -88,7 +123,7 @@ reference and the manual audit script are in [`docs/accessibility.md`](./docs/ac
 
 ```sh
 pnpm install
-pnpm dev                               # playground at http://localhost:5173
+pnpm dev                               # playground at http://localhost:5173 (grid, /logs.html, /chat.html)
 pnpm test                              # unit tests (Vitest, fast-check)
 pnpm test:e2e                          # browser tests: paint correctness, interaction, React and TanStack
 pnpm typecheck

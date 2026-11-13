@@ -13,9 +13,16 @@
     "@falcon-grid/cells": "workspace:*",
     "@falcon-grid/core": "workspace:*",
     "@falcon-grid/datagen": "workspace:*",
-    "@falcon-grid/text": "workspace:*"
+    "@falcon-grid/list": "workspace:*",
+    "@falcon-grid/react": "workspace:*",
+    "@falcon-grid/text": "workspace:*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "vite": "^7.3.8"
   }
 }

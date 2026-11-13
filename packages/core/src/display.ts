@@ -46,6 +46,8 @@ export interface TextOp extends OpBase {
   text: string;
   font: string;
   underline?: boolean;
+  /** Continues the previous text op's text on a new line (a soft wrap), for copying text. */
+  soft?: boolean;
 }
 
 /** An SVG path in a `box`-unit square viewBox, scaled to `w` by `h`. Stroked when `line` is set. */

@@ -8,5 +8,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
-  external: ['react', 'react-dom', '@falcon-grid/core'],
+  external: ['react', 'react-dom', '@falcon-grid/core', '@falcon-grid/list'],
 });

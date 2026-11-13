@@ -17,6 +17,16 @@
     "gzip": true
   },
   {
+    "name": "@falcon-grid/list (core excluded)",
+    "path": "packages/list/dist/index.js",
+    "import": "*",
+    "ignore": [
+      "@falcon-grid/core"
+    ],
+    "limit": "5 kB",
+    "gzip": true
+  },
+  {
     "name": "@falcon-grid/text (Pretext included, core excluded)",
     "path": "packages/text/dist/index.js",
     "import": "*",
@@ -33,9 +43,10 @@
     "ignore": [
       "@falcon-grid/core",
       "react",
-      "react-dom"
+      "react-dom",
+      "@falcon-grid/list"
     ],
-    "limit": "6 kB",
+    "limit": "7 kB",
     "gzip": true
   },
   {
@@ -43,11 +54,24 @@
     "ignore": [
       "react",
       "react-dom",
-      "@falcon-grid/core"
+      "@falcon-grid/core",
+      "@falcon-grid/list"
     ],
     "limit": "40 kB",
     "gzip": true,
     "path": "tools/size-stack.js"
+  },
+  {
+    "name": "core + react + cells + list",
+    "ignore": [
+      "react",
+      "react-dom",
+      "@falcon-grid/core",
+      "@falcon-grid/list"
+    ],
+    "limit": "44 kB",
+    "gzip": true,
+    "path": "tools/size-list-stack.js"
   },
   {
     "name": "@falcon-grid/tanstack (react and core excluded)",

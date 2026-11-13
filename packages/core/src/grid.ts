@@ -7,6 +7,7 @@ import { colX, createHit, hitTest, rowY } from './hittest';
 import { attachInteraction, type InteractionHost } from './interaction';
 import { buildColumnOffsets, computeViewport, createViewportRange } from './layout';
 import { paintOverlay, type DragIndicator } from './overlay';
+import type { GridPlugin, GridPluginFactory, GridPluginHost } from './plugin';
 import { BasePainter, MAX_DIRTY_AREAS, type CellPaint, type DirtyCells, type PaintInput } from './painter';
 import { FixedRows, VariableRows, type RowModel } from './rows';
 import { ScrollAxis } from './scroll';
@@ -54,6 +55,13 @@ export interface GridOptions extends GridEvents {
    * browser's text size setting applies (default true). Sizes are as at a 16px root.
    */
   scaleWithRootFont?: boolean;
+  /**
+   * Keep the view pinned to the bottom while it is scrolled to the bottom: new rows and growing
+   * rows push the content up instead of extending below. For chat, logs and feeds.
+   */
+  stickToBottom?: boolean;
+  /** Extensions such as the list's sticky headers and text selection. Fixed at creation. */
+  plugins?: readonly GridPluginFactory[];
   /** Called after every frame. For instrumentation; keep it cheap. */
   onFrame?: (info: Readonly<FrameInfo>) => void;
   /** Override the frame source (tests). */
@@ -65,7 +73,7 @@ export interface Grid {
   /** Positioned container above the canvases for editors, tooltips and the accessibility mirror. */
   readonly domLayer: HTMLDivElement;
   readonly element: HTMLDivElement;
-  update(options: Partial<Omit<GridOptions, 'frameSource'>>): void;
+  update(options: Partial<Omit<GridOptions, 'frameSource' | 'plugins'>>): void;
   /** Read the latest state; `store.subscribe` to be told when it changes. */
   getState(): GridState;
   /**
@@ -80,6 +88,12 @@ export interface Grid {
   invalidateCells(cells: ArrayLike<number>, count?: number): void;
   /** Repaint rows [start, end). Auto row heights for them are re-measured. */
   invalidateRows(start: number, end: number): void;
+  /**
+   * `count` rows were inserted before `index` in the data (e.g. older messages prepended). Grows
+   * the row count, moves measured heights and the selection with their rows, and keeps the
+   * content on screen still.
+   */
+  insertRows(index: number, count: number): void;
   /** Scroll to virtual content offsets in CSS pixels. */
   scrollTo(position: { left?: number; top?: number }): void;
   /** Scroll so `row` is the first row below the header and frozen rows. */
@@ -197,6 +211,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   };
   setEvents(options);
   let drag: DragIndicator = { kind: 'none' };
+  let plugins: GridPlugin[] = [];
 
   let offsets = buildColumnOffsets(options.columns);
   let offsetsFor: readonly ColumnDef[] = options.columns;
@@ -269,6 +284,15 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       out,
     );
 
+  /**
+   * Whether the scroller is at its bottom. Read from the DOM, which is the truth even while the
+   * axes still hold an older viewport size (the first layout runs before the scroller is sized).
+   */
+  const atBottom = () => {
+    const el = surface.scroller;
+    return el.scrollTop >= el.scrollHeight - el.clientHeight - 1;
+  };
+
   const publishScroll = () => store.setState({ scrollLeft: axisX.virtual, scrollTop: axisY.virtual });
 
   /** Moves scaled scrollbar thumbs to match the content, without moving the content. */
@@ -294,6 +318,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       axisX.onScroll(left, relative);
       axisY.onScroll(top, relative);
       if (axisY.virtual !== before) scrollDir = axisY.virtual > before ? 1 : -1;
+      if (stick) pinned = atBottom();
       publishScroll();
       if (axisX.stuck || axisY.stuck) resyncThumbs();
       else if (relative && (axisX.scaled || axisY.scaled)) {
@@ -348,7 +373,13 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
    * Restoring it after heights change keeps the content on screen still.
    */
   const anchor = { row: 0, delta: 0, atTop: true };
+  /** Captured ahead of a change that moves rows (an insert); the next layout keeps it. */
+  let anchorHeld = false;
+  let stick = options.stickToBottom === true;
+  /** Scrolled to the bottom with `stickToBottom`: the view follows the bottom. */
+  let pinned = stick;
   const captureAnchor = (s: GridState) => {
+    if (anchorHeld) return;
     anchor.atTop = s.scrollTop <= 0;
     if (anchor.atTop || rows.count === 0) return;
     const p = s.scrollTop + rows.offsetOf(frozenRowsOf(s));
@@ -359,7 +390,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     const s = store.getSnapshot();
     applyContentSize();
     let target = 0;
-    if (!anchor.atTop && rows.count > 0) {
+    if (pinned) target = axisY.virtualMax;
+    else if (!anchor.atTop && rows.count > 0) {
       const row = Math.min(anchor.row, rows.count - 1);
       target = rows.offsetOf(row) + Math.min(anchor.delta, rows.heightOf(row)) - rows.offsetOf(frozenRowsOf(s));
     }
@@ -553,7 +585,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     // The browser may have clamped scroll, or the scale may have changed.
     axisX.observeDom(surface.scroller.scrollLeft);
     axisY.observeDom(surface.scroller.scrollTop);
-    if (variable) restoreAnchor();
+    if (variable || pinned || anchorHeld) restoreAnchor();
+    anchorHeld = false;
     resyncThumbs();
     publishScroll();
   };
@@ -625,6 +658,14 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
         matches,
         focusRect: focusRectOf(s),
       });
+      const o = surface.overlay;
+      for (const p of plugins) {
+        if (!p.paintOverlay) continue;
+        o.setTransform(input.dpr, 0, 0, input.dpr, 0, 0);
+        o.save();
+        p.paintOverlay(o);
+        o.restore();
+      }
       info.overlay = true;
     }
     if (variable) scheduleIdle();
@@ -729,6 +770,10 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   };
 
   const copySelection = () => {
+    for (const p of plugins) {
+      const d = p.copy?.();
+      if (d) return d;
+    }
     const s = store.getSnapshot();
     const a = s.activeCell;
     const source = s.selection.length > 0 ? s.selection : a ? [{ top: a.row, left: a.col, bottom: a.row, right: a.col }] : [];
@@ -742,7 +787,12 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     controlledSelection: () => controlled.selection,
     store,
     events,
-    hitTest: (x, y) => hitTest(x, y, live(), offsets, rows, store.getSnapshot().columns, hit),
+    hitTest(x, y) {
+      hitTest(x, y, live(), offsets, rows, store.getSnapshot().columns, hit);
+      for (const p of plugins) p.hitTest?.(x, y, hit);
+      return hit;
+    },
+    plugins: [],
     viewport: () => ({ vp: live(), offsets, rows }),
     scrollBy(dx, dy) {
       const s = store.getSnapshot();
@@ -800,7 +850,9 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     focusControl: (cell) => mirror.focusControl(cell),
     announce: (m) => mirror.announce(m),
   };
-  surface.scroller.tabIndex = -1;
+  // A tab stop until the mirror's first sync hands it to the active cell; focus that lands here
+  // moves on to the cell (see `onFocusIn`).
+  surface.scroller.tabIndex = 0;
   surface.scroller.style.outline = 'none';
   const mirror: Mirror = createMirror({
     element: surface.scroller,
@@ -817,6 +869,40 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       events.onCellContextMenu?.({ ...cell, column: store.getSnapshot().columns[cell.col]!, event }),
   });
   mirror.setLabel(options.ariaLabel, options.ariaLabelledBy);
+
+  // ---- Plugins ------------------------------------------------------------------------------
+
+  const bandVp = createViewportRange();
+  const bandInput: PaintInput = { ...input, vp: bandVp };
+  const pluginHost: GridPluginHost = {
+    store,
+    element: surface.scroller,
+    viewport: host.viewport,
+    getCell: (r, c) => getCell(r, c, store.getSnapshot().columns[c]!),
+    theme: () => resolved,
+    text,
+    wrapper: () => wrapper,
+    autoHeight: () => variable !== null,
+    displayList: (r, c) => listOf(r, c, store.getSnapshot().columns[c]!),
+    paintRow(ctx, row, top, clipTop) {
+      const s = store.getSnapshot();
+      if (row < 0 || row >= rows.count || surface.backingWidth <= 0) return;
+      computeViewport(
+        {
+          offsets, rows, headerHeight: s.theme.headerHeight, frozenColumns: s.frozenColumns, frozenRows: s.frozenRows,
+          scrollLeft: s.scrollLeft, scrollTop: s.theme.headerHeight + rows.offsetOf(row) - top,
+          width: s.viewportWidth, height: s.viewportHeight,
+        },
+        bandVp,
+      );
+      Object.assign(bandInput, input, { ctx, vp: bandVp });
+      painter.paintBand(bandInput, Math.max(top, clipTop), top + rows.heightOf(row));
+    },
+    invalidateOverlay: () => scheduler.mark(Dirty.Overlay),
+    scrollBy: host.scrollBy,
+  };
+  plugins = (options.plugins ?? []).map((f) => f(pluginHost));
+  host.plugins = plugins;
   const detachInteraction = attachInteraction(host);
 
   // The browser's text size setting changes the root font size; a 1rem probe notices.
@@ -929,7 +1015,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     dirty.cells[dirty.count * 2] = row;
     dirty.cells[dirty.count * 2 + 1] = col;
     dirty.count++;
-    scheduler.mark(Dirty.Cells);
+    scheduler.mark(plugins.length > 0 ? Dirty.Cells | Dirty.Overlay : Dirty.Cells);
   }
 
   scheduler.mark(Dirty.All);
@@ -970,6 +1056,10 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
         scheduler.mark(Dirty.Base);
       }
       if ('onFrame' in o) onFrame = o.onFrame;
+      if (o.stickToBottom !== undefined && o.stickToBottom !== stick) {
+        stick = o.stickToBottom;
+        pinned = stick && atBottom();
+      }
       if (o.controlledSelection !== undefined) controlled.selection = o.controlledSelection;
       if (o.controlledColumns !== undefined) controlled.columns = o.controlledColumns;
       setEvents(o);
@@ -1019,9 +1109,41 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       }
       for (let r = start; r < end; r++) addDirty(r, -1);
     },
+    insertRows(index, count) {
+      const s = store.getSnapshot();
+      if (count <= 0 || index < 0 || index > s.rowCount) return;
+      // Keep the content on screen: anchor before the rows move (even at the top, so prepended
+      // rows appear above), then shift the anchor with its row.
+      if (anchorHeld) {
+        // A second insert before the next layout: the anchor is already taken.
+        if (!anchor.atTop && anchor.row >= index) anchor.row += count;
+      } else if (rows.count > 0) {
+        const p = s.scrollTop + rows.offsetOf(frozenRowsOf(s));
+        anchor.atTop = false;
+        anchor.row = rows.rowAt(p);
+        anchor.delta = p - rows.offsetOf(anchor.row);
+        if (anchor.row >= index) anchor.row += count;
+      } else anchor.atTop = true;
+      anchorHeld = true;
+      variable?.insert(index, count);
+      const shift = (r: number) => (r >= index ? r + count : r);
+      const selection = s.selection.map((r) =>
+        r.bottom < index ? r : { ...r, top: shift(r.top), bottom: r.bottom + count },
+      );
+      const a = s.activeCell;
+      store.setState({
+        rowCount: s.rowCount + count,
+        selection,
+        activeCell: a && a.row >= index ? { row: a.row + count, col: a.col } : a,
+        hoverCell: null,
+        hoverTarget: null,
+      });
+      mirror.schedule();
+    },
     scrollTo({ left, top }) {
       if (left !== undefined) surface.scroller.scrollLeft = axisX.scrollTo(left);
       if (top !== undefined) surface.scroller.scrollTop = axisY.scrollTo(top);
+      if (stick) pinned = atBottom();
       publishScroll();
     },
     scrollToRow(row) {
@@ -1029,6 +1151,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       const r = Math.max(0, Math.min(row, rows.count - 1));
       const top = rows.offsetOf(r) - rows.offsetOf(frozenRowsOf(s));
       surface.scroller.scrollTop = axisY.scrollTo(top);
+      if (stick) pinned = atBottom();
       publishScroll();
     },
     visibleRows() {
@@ -1107,6 +1230,7 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       destroyed = true;
       findToken++;
       detachInteraction();
+      for (const p of plugins) p.destroy?.();
       mirror.destroy();
       remObserver?.disconnect();
       contrastMQ?.removeEventListener?.('change', applyTheme);

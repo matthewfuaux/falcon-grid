@@ -32,6 +32,12 @@ declare global {
     selectionChanges: number;
     consoleErrors: string[];
     table: import('@tanstack/table-core').Table<number>;
+    // List fixture (list.html).
+    list: import('@falcon-grid/list').List<{ id: number; header?: string; author: string; body: string }>;
+    listHandle: import('@falcon-grid/react').ListHandle;
+    prepend(n: number): void;
+    append(n: number): void;
+    ids: { first(): number; count(): number };
   }
 }
 

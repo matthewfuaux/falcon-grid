@@ -1,0 +1,36 @@
+name: Bug report
+description: Something renders wrong, behaves wrong or is slow.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: A minimal reproduction (a playground change, a CodeSandbox link or a failing test) and the steps to trigger it.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: falcon-grid packages, React (if used), browser and OS.
+      placeholder: "@falcon-grid/react 0.1.0, React 19.1, Chrome 141, macOS 15"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Rendering, Scrolling and row heights, Interaction, Declarative cells, React, TanStack adapter, List mode, Accessibility, Performance, Other]
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, a performance trace, the device pixel ratio, whether it happens with a GPU canvas.
