@@ -94,6 +94,18 @@ export interface CellRegion {
   onClick?: (e: CellActionEvent) => void;
   /** Finer test within the rectangle, in the same coordinates. */
   hitTest?: (x: number, y: number) => boolean;
+  /**
+   * What the region is to assistive technology. A region with a role becomes a real control in
+   * the accessibility mirror (a button, link or checkbox) that keyboard users can reach with
+   * Enter and activate. Without a role, a clickable region is exposed as a button.
+   */
+  role?: 'button' | 'link' | 'checkbox';
+  /** Accessible name. */
+  label?: string;
+  /** Checkbox state. */
+  checked?: boolean;
+  /** Link target. */
+  href?: string;
 }
 
 export interface DisplayList {
@@ -124,6 +136,11 @@ export interface CellRenderer<T = unknown> {
   layout(value: T, width: number, env: CellEnv): DisplayList;
   /** Plain text for copying. */
   text(value: T): string;
+  /**
+   * What a screen reader reads for the cell, leaving out the labels of its controls (they are
+   * read from the controls themselves). Default: `text`.
+   */
+  accessibleText?(value: T): string;
   /** The value changed in place (same identity): drop anything cached for it. */
   forget?(value: T): void;
 }

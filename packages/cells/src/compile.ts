@@ -264,12 +264,19 @@ export class Compiler {
   // ---- Emitting -------------------------------------------------------------------------------
 
   /** Adds a hit region for an interactive or tooltipped node; returns its index. */
-  private region(n: Sizing & Interactive & { hitTest?: (x: number, y: number) => boolean }, x: number, y: number, w: number, h: number) {
-    if (!n.onClick && n.tooltip === undefined) return undefined;
+  private region(n: CellNode & { hitTest?: (x: number, y: number) => boolean }, x: number, y: number, w: number, h: number) {
+    if (!('onClick' in n && n.onClick) && n.tooltip === undefined) return undefined;
     const r: CellRegion = { x, y, w, h };
-    if (n.onClick) r.onClick = n.onClick;
+    if ('onClick' in n && n.onClick) {
+      r.onClick = n.onClick;
+      // Clickable: a control for assistive technology.
+      r.role = n.type === 'checkbox' ? 'checkbox' : n.type === 'link' ? 'link' : 'button';
+      r.label = n.ariaLabel ?? nameOf(n);
+      if (n.type === 'checkbox') r.checked = n.checked;
+      if (n.type === 'link' && n.href) r.href = n.href;
+    }
     if (n.tooltip !== undefined) r.tooltip = n.tooltip;
-    if (n.cursor !== undefined) r.cursor = n.cursor;
+    if ('cursor' in n && n.cursor !== undefined) r.cursor = n.cursor;
     const test = n.hitTest;
     if (test) r.hitTest = (px, py) => test(px - x, py - y);
     this.regions.push(r);
@@ -462,6 +469,61 @@ export class Compiler {
       case 'spacer':
         break;
     }
+  }
+}
+
+/** The name a clickable primitive gets by default. */
+function nameOf(n: CellNode): string {
+  const icon = (i: IconNode['icon'] | undefined) => (typeof i === 'string' ? i : '');
+  switch (n.type) {
+    case 'text':
+      return n.text;
+    case 'badge':
+    case 'link':
+      return n.label;
+    case 'button':
+      return n.label ?? n.tooltip ?? icon(n.icon);
+    case 'icon':
+      return n.tooltip ?? icon(n.icon);
+    case 'avatar':
+      return n.tooltip ?? n.name;
+    case 'custom':
+      return n.tooltip ?? n.text ?? '';
+    default:
+      return n.tooltip ?? '';
+  }
+}
+
+/** Whether a primitive is a control (read from the control itself, not the cell text). */
+const isControl = (n: CellNode) => 'onClick' in n && !!n.onClick;
+
+/**
+ * What a screen reader reads for a tree: its text and the state of non-interactive parts
+ * (unticked checkboxes, progress), leaving out controls, which are read on their own.
+ */
+export function accessibleTextOf(n: CellNode | null | undefined | false): string {
+  if (!n || isControl(n)) return '';
+  switch (n.type) {
+    case 'checkbox':
+      return n.checked ? 'checked' : 'not checked';
+    case 'progress':
+      return `${Math.round(Math.max(0, Math.min(1, n.value)) * 100)}%`;
+    case 'avatar':
+      return '';
+    case 'icon':
+    case 'image':
+      return n.tooltip ?? '';
+    case 'row':
+    case 'stack': {
+      let s = '';
+      for (const c of n.children) {
+        const t = accessibleTextOf(c);
+        if (t) s = s ? `${s} ${t}` : t;
+      }
+      return s;
+    }
+    default:
+      return textOf(n);
   }
 }
 

@@ -1,10 +1,15 @@
 import { EMPTY_LIST, LRU, type CellEnv, type CellRenderer, type DisplayList } from '@falcon-grid/core';
-import { Compiler, textOf } from './compile';
+import { Compiler, accessibleTextOf, textOf } from './compile';
 import type { Child } from './nodes';
 
 export interface CellOptions<T> {
   /** Text for copying (default: the tree's text, labels and custom text). */
   text?: (value: T) => string;
+  /**
+   * What screen readers read for the cell, without its controls' labels (default: the tree's
+   * text plus the state of checkboxes and progress bars).
+   */
+  accessibleText?: (value: T) => string;
   /** Values whose layouts are kept (default 2000). */
   cacheSize?: number;
 }
@@ -66,6 +71,9 @@ export function cell<T>(build: (value: T) => Child, options: CellOptions<T> = {}
     },
     text(value) {
       return options.text ? options.text(value) : textOf(build(value));
+    },
+    accessibleText(value) {
+      return options.accessibleText ? options.accessibleText(value) : accessibleTextOf(build(value));
     },
     forget(value) {
       cache.delete(value);

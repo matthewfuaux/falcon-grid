@@ -82,7 +82,7 @@ export function booleanColumn(
       (v) => {
         const checked = v === true || v === 'true' || v === 1;
         return row({ justify: o.align === 'left' ? 'start' : o.align === 'right' ? 'end' : 'center' }, [
-          checkbox(checked, onChange ? { onClick: (e) => onChange(!checked, e) } : {}),
+          checkbox(checked, onChange ? { onClick: (e) => onChange(!checked, e), ariaLabel: o.title ?? o.id } : {}),
         ]);
       },
       { text: (v) => String(v === true || v === 'true' || v === 1) },

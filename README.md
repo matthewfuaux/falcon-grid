@@ -4,15 +4,16 @@ A small, open source canvas table and list for React, built to stay inside an 8 
 
 ## Status
 
-| Phase                                                       | State       |
-| ----------------------------------------------------------- | ----------- |
-| 0. Foundations: monorepo, CI, playground, benchmark harness | done        |
-| 1. Core renderer: fixed-height read-only table              | done        |
-| 2. Text engine and variable row heights                     | done        |
-| 3. Interaction: selection, keyboard, resize, reorder, copy  | done        |
-| 4. Declarative cells: primitives, display lists, built-ins  | done        |
-| 5. React API and TanStack adapter                           | done        |
-| 6–7                                                         | not started |
+| Phase                                                       | State                                    |
+| ----------------------------------------------------------- | ---------------------------------------- |
+| 0. Foundations: monorepo, CI, playground, benchmark harness | done                                     |
+| 1. Core renderer: fixed-height read-only table              | done                                     |
+| 2. Text engine and variable row heights                     | done                                     |
+| 3. Interaction: selection, keyboard, resize, reorder, copy  | done                                     |
+| 4. Declarative cells: primitives, display lists, built-ins  | done                                     |
+| 5. React API and TanStack adapter                           | done                                     |
+| 6. Accessibility: ARIA mirror, focus, keyboard, search      | done; manual screen reader audit pending |
+| 7                                                           | not started                              |
 
 ## Layout
 
@@ -32,16 +33,22 @@ bench             competitor targets + Playwright benchmark harness
 ## React
 
 ```tsx
-import { Grid, columnHelper } from '@falcon-grid/react';
+import { Grid, columnHelper } from "@falcon-grid/react";
 
 const col = columnHelper<Person>();
 const columns = [
-  col.accessor('name', { title: 'Name', width: 200 }),
-  col.accessor((p) => p, { id: 'user', title: 'User', cell: userCell }), // userCell: CellRenderer<Person>
+  col.accessor("name", { title: "Name", width: 200 }),
+  col.accessor((p) => p, { id: "user", title: "User", cell: userCell }), // userCell: CellRenderer<Person>
 ];
 
 const getRow = useCallback((i: number) => people[i], [people]);
-<Grid rowCount={people.length} columns={columns} getRow={getRow} rowHeight="auto" frozenColumns={1} />;
+<Grid
+  rowCount={people.length}
+  columns={columns}
+  getRow={getRow}
+  rowHeight="auto"
+  frozenColumns={1}
+/>;
 ```
 
 React stays out of the frame loop: scrolling and hovering never render. Columns are compared
@@ -55,14 +62,27 @@ a component to a slice of grid state, `<CellOverlay>` positions DOM over a cell,
 With TanStack Table, only the render layer changes:
 
 ```tsx
-import { useCanvasTable } from '@falcon-grid/tanstack';
+import { useCanvasTable } from "@falcon-grid/tanstack";
 
-const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
+const table = useReactTable({
+  data,
+  columns,
+  getCoreRowModel: getCoreRowModel(),
+});
 return <Grid {...useCanvasTable(table)} />;
 ```
 
 Sizing, ordering, left pinning (as frozen columns) and sorting map both ways. Columns opt in to
 declarative cells with `meta: { canvasCell }`; others draw their value as text.
+
+## Accessibility
+
+A transparent DOM mirror gives screen readers a real `role="grid"` with true row and column
+counts, real focus on the active cell, and real buttons, links and checkboxes for clickable cell
+content. Everything pointer-only has a key, browser find is replaced by `setSearch` and
+`findNext`, and the grid follows forced colours, `prefers-contrast` and the browser's text size.
+Give every grid a name (`ariaLabel`, or `aria-label` in React). Details, the keyboard
+reference and the manual audit script are in [`docs/accessibility.md`](./docs/accessibility.md).
 
 ## Commands
 
@@ -150,8 +170,6 @@ Spreadsheet features (formulas, fill handle, merged cells), pivoting and aggrega
 ## Licence
 
 MIT
-
-claude --ide --resume 81f7fb3f-f518-4c04-8234-5d70d5c8145a
 
 ## Interaction
 

@@ -86,6 +86,8 @@ export interface Theme {
   selectionBorder: string;
   /** Active cell ring, and drag indicators. */
   focusRing: string;
+  /** Background of cells matching the search (`setSearch`). Translucent. */
+  matchBackground: string;
   /** Colours for cell primitives: secondary text, links and controls, and status tones. */
   mutedForeground: string;
   accent: string;
@@ -122,6 +124,8 @@ export interface GridState {
   /** Interactive cell region under the pointer, and the one being pressed. */
   hoverTarget: CellTarget | null;
   pressedTarget: CellTarget | null;
+  /** In-cell control with keyboard focus (reached with Enter on its cell). */
+  focusTarget: CellTarget | null;
 }
 
 export interface FrameInfo {

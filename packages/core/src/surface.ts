@@ -59,6 +59,9 @@ export function createSurface(container: HTMLElement, cb: SurfaceCallbacks): Sur
     height: '100%',
     contain: 'strict',
     overscrollBehavior: 'contain',
+    // The grid keeps content still itself; the browser's anchoring would pick a mirror element
+    // as its anchor and fight it.
+    overflowAnchor: 'none',
   });
   css(sizer, { position: 'relative' });
   css(stack, { position: 'sticky', top: '0', left: '0', overflow: 'hidden' });

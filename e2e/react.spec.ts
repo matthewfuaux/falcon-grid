@@ -160,7 +160,8 @@ test('double-click edits a cell; Enter commits and moves down', async ({ page })
   const id = (await state(page)).ids[1]!;
   expect(await page.evaluate(() => window.edits)).toEqual([[3, id, 'hello']]);
   expect((await state(page)).activeCell).toEqual({ row: 4, col: 1 });
-  expect(await page.evaluate(() => document.activeElement === window.grid.element)).toBe(true);
+  // Focus is back on the grid: the active cell's mirror element.
+  expect(await page.evaluate(() => window.grid.isKeyTarget(document.activeElement))).toBe(true);
   // The grid shows the new value.
   const text = await page.evaluate(() => {
     window.grid.setSelection([{ top: 3, left: 1, bottom: 3, right: 1 }]);
@@ -184,7 +185,8 @@ test('typing starts editing with that key; Escape cancels and returns focus', as
   await page.keyboard.press('Escape');
   await expect(input).toHaveCount(0);
   expect(await page.evaluate(() => window.edits)).toEqual([]);
-  expect(await page.evaluate(() => document.activeElement === window.grid.element)).toBe(true);
+  // Focus is back on the grid: the active cell's mirror element.
+  expect(await page.evaluate(() => window.grid.isKeyTarget(document.activeElement))).toBe(true);
 });
 
 test('an open editor follows its cell while scrolling, without commits', async ({ page }) => {

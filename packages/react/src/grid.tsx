@@ -136,6 +136,14 @@ export interface GridProps<TRow> {
   /** Called after every painted frame. For instrumentation; keep it cheap. */
   onFrame?: (info: Readonly<FrameInfo>) => void;
 
+  /** Accessible name of the grid. Give one of these: screen readers announce it on entry. */
+  'aria-label'?: string;
+  'aria-labelledby'?: string;
+  /** Follow `prefers-contrast` and forced colours (default true). */
+  respectUserPreferences?: boolean;
+  /** Scale theme sizes with the root font size (default true). */
+  scaleWithRootFont?: boolean;
+
   /** Size of the grid (default 100% of its parent). Also the size of the server placeholder. */
   width?: number | string;
   height?: number | string;
@@ -166,6 +174,10 @@ interface Pushed {
   selection: GridSelection | undefined;
   scroll: Partial<ScrollPosition> | undefined;
   controlledSelection: boolean;
+  label: string | undefined;
+  labelledBy: string | undefined;
+  prefs: boolean | undefined;
+  scaleFont: boolean | undefined;
 }
 
 const EMPTY_THEME: Partial<Theme> = {};
@@ -328,6 +340,10 @@ function GridImpl<TRow>(props: GridProps<TRow>, ref: ForwardedRef<GridHandle>): 
     };
     if (p.textWrapper) options.textWrapper = p.textWrapper;
     if (p.onFrame) options.onFrame = p.onFrame;
+    if (p['aria-label']) options.ariaLabel = p['aria-label'];
+    if (p['aria-labelledby']) options.ariaLabelledBy = p['aria-labelledby'];
+    if (p.respectUserPreferences !== undefined) options.respectUserPreferences = p.respectUserPreferences;
+    if (p.scaleWithRootFont !== undefined) options.scaleWithRootFont = p.scaleWithRootFont;
     const grid = createGrid(host, options);
 
     const saved = self.saved;
@@ -358,6 +374,10 @@ function GridImpl<TRow>(props: GridProps<TRow>, ref: ForwardedRef<GridHandle>): 
       selection: p.selection,
       scroll: p.scrollPosition,
       controlledSelection: p.selection !== undefined,
+      label: p['aria-label'],
+      labelledBy: p['aria-labelledby'],
+      prefs: p.respectUserPreferences,
+      scaleFont: p.scaleWithRootFont,
     };
 
     // onScroll: the store changes for many reasons; report only scroll moves.
@@ -373,7 +393,7 @@ function GridImpl<TRow>(props: GridProps<TRow>, ref: ForwardedRef<GridHandle>): 
 
     // Enter, F2 or a printable key on the active cell starts editing.
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target !== grid.element || e.defaultPrevented || e.isComposing) return;
+      if (!grid.isKeyTarget(e.target) || e.defaultPrevented || e.isComposing) return;
       if (e.altKey || e.ctrlKey || e.metaKey || !propsRef.current.onCellEdit) return;
       const active = grid.getState().activeCell;
       if (!active) return;
@@ -428,6 +448,18 @@ function GridImpl<TRow>(props: GridProps<TRow>, ref: ForwardedRef<GridHandle>): 
     if (p.onFrame !== last.onFrame) patch.onFrame = last.onFrame = p.onFrame;
     const controlled = p.selection !== undefined;
     if (controlled !== last.controlledSelection) patch.controlledSelection = last.controlledSelection = controlled;
+    if (p['aria-label'] !== last.label || p['aria-labelledby'] !== last.labelledBy) {
+      patch.ariaLabel = last.label = p['aria-label'];
+      patch.ariaLabelledBy = last.labelledBy = p['aria-labelledby'];
+    }
+    if (p.respectUserPreferences !== last.prefs) {
+      last.prefs = p.respectUserPreferences;
+      patch.respectUserPreferences = p.respectUserPreferences ?? true;
+    }
+    if (p.scaleWithRootFont !== last.scaleFont) {
+      last.scaleFont = p.scaleWithRootFont;
+      patch.scaleWithRootFont = p.scaleWithRootFont ?? true;
+    }
     if (Object.keys(patch).length > 0) grid.update(patch as Partial<GridOptions>);
 
     if (p.getRow !== last.getRow) {

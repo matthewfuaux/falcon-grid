@@ -31,6 +31,10 @@ export interface OverlayInput {
   hoverCell: CellRef | null;
   focused: boolean;
   drag: DragIndicator;
+  /** Cells matching the search, as [row, col] pairs. */
+  matches?: readonly number[];
+  /** The in-cell control with keyboard focus, in viewport CSS pixels. */
+  focusRect?: { x: number; y: number; w: number; h: number } | null;
 }
 
 /** Keeps far off-screen coordinates in a range canvases handle well; the clip hides the rest. */
@@ -115,6 +119,16 @@ export function paintOverlay(o: OverlayInput): void {
         const y = yOf(hover.row, sy);
         fill(cx0, y, cx1, y + o.rows.heightOf(hover.row));
       }
+      const m = o.matches;
+      if (m && m.length > 0) {
+        ctx.fillStyle = theme.matchBackground;
+        for (let i = 0; i < m.length; i += 2) {
+          const r = m[i]!;
+          const c = m[i + 1]!;
+          const y = yOf(r, sy);
+          fill(xOf(c, sx), y, xOf(c + 1, sx), y + o.rows.heightOf(r));
+        }
+      }
       for (const r of selection) {
         if (loneActive(r)) continue;
         const x0 = xOf(r.left, sx);
@@ -134,6 +148,13 @@ export function paintOverlay(o: OverlayInput): void {
       }
       ctx.restore();
     }
+  }
+
+  const f = o.focusRect;
+  if (f) {
+    // Around the control, outside it, so it never covers the control's own drawing.
+    ctx.fillStyle = theme.focusRing;
+    ring(f.x - 2, f.y - 2, f.x + f.w + 2, f.y + f.h + 2, thick);
   }
 
   const d = o.drag;

@@ -27,6 +27,9 @@ export {
 } from './painter';
 export {
   defaultTheme,
+  forcedColorsTheme,
+  highContrastTheme,
+  scaleTheme,
   mergeTheme,
   resolveTheme,
   themeFromCSSVariables,
@@ -79,3 +82,4 @@ export { FixedRows, VariableRows, type RowModel } from './rows';
 export { TextMeasurer, canvasMeasure, ELLIPSIS, type MeasureFn, type TextWrapper } from './text';
 export { LRU } from './lru';
 export { ScrollAxis } from './scroll';
+export { createMirror, type Mirror, type MirrorHost } from './a11y';

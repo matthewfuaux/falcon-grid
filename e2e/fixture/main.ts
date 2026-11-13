@@ -119,6 +119,8 @@ const grid = createGrid(document.getElementById('root')!, {
     }),
   onCellClick: record('cellClick'),
   onCellDoubleClick: record('cellDoubleClick'),
+  onCellContextMenu: record('cellContextMenu'),
+  ariaLabel: 'Test grid',
   onHeaderClick: record('headerClick'),
   onSelectionChange: record('selectionChange'),
   onColumnResize: record('columnResize'),

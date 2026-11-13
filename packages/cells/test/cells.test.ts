@@ -21,6 +21,7 @@ import {
   textColumn,
   textOf,
   userColumn,
+  accessibleTextOf,
 } from '../src';
 
 /** 7px per character in every font; wraps every 10 characters. */
@@ -73,7 +74,7 @@ describe('layout', () => {
     expect(btnBg).toMatchObject({ k: 'rect', x: 276, y: 0, w: 24, h: 24, alpha: 0, region: 0, hover: { alpha: 0.08 } });
     expect(btnIcon).toMatchObject({ k: 'path', x: 280, y: 4, region: 0 });
     expect(list.height).toBe(24);
-    expect(list.regions).toEqual([{ x: 276, y: 0, w: 24, h: 24, onClick }]);
+    expect(list.regions).toEqual([{ x: 276, y: 0, w: 24, h: 24, onClick, role: 'button', label: 'more' }]);
   });
 
   it('justifies leftover space', () => {
@@ -251,5 +252,60 @@ describe('built-in column types', () => {
   it('text columns truncate or wrap', () => {
     expect(String(show(textColumn({ id: 'x' }), 'a'.repeat(40), 100)[0]).endsWith(ELLIPSIS)).toBe(true);
     expect(textColumn({ id: 'x', wrap: true }).cell!.layout('a'.repeat(25), 100, env).height).toBe(54);
+  });
+});
+
+describe('accessibility', () => {
+  const noop = () => {};
+
+  it('gives clickable primitives a role and a name', () => {
+    const list = compile(
+      row({ gap: 4 }, [
+        button({ icon: 'edit', tooltip: 'Edit', onClick: noop }),
+        button({ label: 'Save', onClick: noop }),
+        link('Docs', { href: 'https://example.com' }),
+        checkbox(true, { onClick: noop, ariaLabel: 'Done' }),
+        badge('New', { onClick: noop }),
+        icon('more', { tooltip: 'Info' }),
+      ]),
+      400,
+    );
+    expect(list.regions.map((r) => [r.role, r.label, r.checked, r.href])).toEqual([
+      ['button', 'Edit', undefined, undefined],
+      ['button', 'Save', undefined, undefined],
+      ['link', 'Docs', undefined, 'https://example.com'],
+      ['checkbox', 'Done', true, undefined],
+      ['button', 'New', undefined, undefined],
+      // A tooltip alone is not a control.
+      [undefined, undefined, undefined, undefined],
+    ]);
+  });
+
+  it('reads text and state, but not the controls', () => {
+    const node = row({}, [
+      text('Ada'),
+      badge('Admin'),
+      button({ label: 'Edit', onClick: noop }),
+      checkbox(false),
+      progress(0.456),
+      icon('check', { tooltip: 'Verified' }),
+      checkbox(true, { onClick: noop }),
+    ]);
+    expect(accessibleTextOf(node)).toBe('Ada Admin not checked 46% Verified');
+    expect(textOf(node)).toBe('Ada Admin Edit');
+  });
+
+  it('cell() exposes accessible text, overridable', () => {
+    const c = cell<string>((v) => row({}, [text(v), button({ label: 'Go', onClick: noop })]));
+    expect(c.accessibleText!('x')).toBe('x');
+    expect(c.text('x')).toBe('x Go');
+    const d = cell<string>((v) => text(v), { accessibleText: (v) => `value ${v}` });
+    expect(d.accessibleText!('y')).toBe('value y');
+  });
+
+  it('labels boolean column checkboxes with the column title', () => {
+    const col = booleanColumn({ id: 'done', title: 'Done', onChange: noop });
+    const list = col.cell!.layout(true, 80, makeEnv());
+    expect(list.regions[0]).toMatchObject({ role: 'checkbox', label: 'Done', checked: true });
   });
 });

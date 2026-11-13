@@ -43,7 +43,7 @@ export {
   type Tone,
 } from './nodes';
 export { icons, type IconName } from './icons';
-export { Compiler, textOf } from './compile';
+export { Compiler, accessibleTextOf, textOf } from './compile';
 export {
   booleanColumn,
   dateColumn,

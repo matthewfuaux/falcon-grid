@@ -1,3 +1,4 @@
+import { createMirror, type Mirror } from './a11y';
 import { selectionToClipboard } from './clipboard';
 import { EMPTY_LIST, contentTop, regionAt, type CellEnv, type CellRegion, type CellTarget, type DisplayList } from './display';
 import { ImageCache } from './images';
@@ -10,11 +11,11 @@ import { BasePainter, MAX_DIRTY_AREAS, type CellPaint, type DirtyCells, type Pai
 import { FixedRows, VariableRows, type RowModel } from './rows';
 import { ScrollAxis } from './scroll';
 import { Dirty, createScheduler, type FrameSource, type Scheduler } from './scheduler';
-import { clampRange } from './selection';
+import { clampRange, rangeOf } from './selection';
 import { createStore, type Store } from './store';
 import { createSurface, type Surface } from './surface';
 import { TextMeasurer, type TextWrapper } from './text';
-import { defaultTheme, mergeTheme, resolveTheme, type ResolvedTheme } from './theme';
+import { defaultTheme, forcedColorsTheme, highContrastTheme, mergeTheme, resolveTheme, scaleTheme, type ResolvedTheme } from './theme';
 import type { CellRange, CellRef, ColumnDef, FrameInfo, GetCell, GridEvents, GridState, RowSizing, Theme } from './types';
 
 export interface GridOptions extends GridEvents {
@@ -39,6 +40,20 @@ export interface GridOptions extends GridEvents {
    * `onColumnReorder` but leave the columns alone until `update({ columns })` is called.
    */
   controlledColumns?: boolean;
+  /** Accessible name of the grid (its `aria-label`), or the id of an element naming it. */
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
+  /**
+   * Follow the user's display settings (default true): `prefers-contrast: more` applies
+   * `highContrastTheme` under your theme, and `forced-colors: active` paints with the system
+   * colours over it.
+   */
+  respectUserPreferences?: boolean;
+  /**
+   * Scale theme sizes (font, padding, row and header height) with the root font size, so the
+   * browser's text size setting applies (default true). Sizes are as at a 16px root.
+   */
+  scaleWithRootFont?: boolean;
   /** Called after every frame. For instrumentation; keep it cheap. */
   onFrame?: (info: Readonly<FrameInfo>) => void;
   /** Override the frame source (tests). */
@@ -86,8 +101,26 @@ export interface Grid {
   getCellBounds(row: number, col: number): { x: number; y: number; width: number; height: number } | null;
   /** The selection as TSV and an HTML table (what Ctrl+C copies), or null if nothing is selected. */
   copySelection(): { text: string; html: string } | null;
-  /** Give the grid keyboard focus. */
+  /** Give the grid keyboard focus (on the active cell). */
   focus(): void;
+  /**
+   * Whether a key event's target is the grid itself (its active cell) rather than something
+   * inside it like an in-cell control or an editor. Handle grid keys only for these.
+   */
+  isKeyTarget(target: EventTarget | null): boolean;
+  /**
+   * Highlights cells whose text contains `query` (null clears). Browser find-in-page cannot see
+   * canvas text, so this is the replacement: wire it to your own search box.
+   */
+  setSearch(query: string | null, options?: { caseSensitive?: boolean }): void;
+  /**
+   * Moves the active cell to the next match after it (or before, `backwards`), scanning in
+   * slices so the page stays responsive. Resolves to the cell, or null if nothing matches or a
+   * newer search replaced this one.
+   */
+  findNext(options?: { backwards?: boolean }): Promise<CellRef | null>;
+  /** Says something through the grid's polite live region. */
+  announce(message: string): void;
   /** Run pending work now instead of on the next frame. */
   flush(): void;
   destroy(): void;
@@ -120,6 +153,7 @@ export function initialGridState(o: Partial<Pick<GridOptions, 'columns' | 'rowCo
     focused: false,
     hoverTarget: null,
     pressedTarget: null,
+    focusTarget: null,
   };
 }
 
@@ -129,7 +163,29 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
   let themePatch = options.theme;
   let wrapper: TextWrapper | null = options.textWrapper ?? null;
 
-  const store = createStore<GridState>(initialGridState(options));
+  const doc = container.ownerDocument;
+  const win = doc.defaultView;
+  let prefs = options.respectUserPreferences !== false;
+  let scaleFont = options.scaleWithRootFont !== false;
+  const media = (q: string) => win?.matchMedia?.(q) ?? null;
+  const contrastMQ = media('(prefers-contrast: more)');
+  const forcedMQ = media('(forced-colors: active)');
+  const rootScale = () => (win ? parseFloat(win.getComputedStyle(doc.documentElement).fontSize) / 16 || 1 : 1);
+  let scale = rootScale();
+  /** Default, high contrast, your theme, forced colours, then root font scaling. */
+  const effectiveTheme = (): Theme => {
+    let t = prefs && contrastMQ?.matches ? mergeTheme(defaultTheme, highContrastTheme) : defaultTheme;
+    t = mergeTheme(t, themePatch);
+    if (prefs && forcedMQ?.matches) t = mergeTheme(t, forcedColorsTheme(doc));
+    return scaleTheme(t, scaleFont ? scale : 1);
+  };
+
+  const initial = initialGridState(options);
+  initial.theme = effectiveTheme();
+  const store = createStore<GridState>(initial);
+  const applyTheme = () => store.setState({ theme: effectiveTheme() });
+  contrastMQ?.addEventListener?.('change', applyTheme);
+  forcedMQ?.addEventListener?.('change', applyTheme);
   const events: GridEvents = {};
   const controlled = { selection: options.controlledSelection === true, columns: options.controlledColumns === true };
   const EVENT_KEYS = [
@@ -545,7 +601,13 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       info.blitX = result.blitX;
       info.blitY = result.blitY;
     }
+    // Matches depend on what is on screen and on the data.
+    if (search && flags & (Dirty.Base | Dirty.Cells | Dirty.Scroll)) {
+      flags |= Dirty.Overlay;
+      if (canPaint) viewportOf(s, vp);
+    }
     if (canPaint && flags & Dirty.Overlay) {
+      collectMatches(s);
       paintOverlay({
         ctx: surface.overlay,
         dpr: surface.backingWidth / s.viewportWidth,
@@ -560,6 +622,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
         hoverCell: s.hoverCell,
         focused: s.focused,
         drag,
+        matches,
+        focusRect: focusRectOf(s),
       });
       info.overlay = true;
     }
@@ -620,6 +684,27 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
     const v = getCell(row, col, column);
     if (v == null) return '';
     return column.cell ? column.cell.text(v) : String(v);
+  };
+
+  /** What a screen reader reads for a cell. */
+  const accessibleText = (row: number, col: number, column: ColumnDef): string => {
+    const v = getCell(row, col, column);
+    if (v == null) return '';
+    const c = column.cell;
+    return c ? (c.accessibleText ? c.accessibleText(v) : c.text(v)) : String(v);
+  };
+
+  const cellBounds = (row: number, col: number) => {
+    const s = store.getSnapshot();
+    if (row < 0 || row >= rows.count || col < 0 || col >= s.columns.length) return null;
+    const v = live();
+    return { x: colX(col, offsets, v), y: rowY(row, rows, v), width: offsets[col + 1]! - offsets[col]!, height: rows.heightOf(row) };
+  };
+
+  /** A user's selection change: applied unless controlled, and reported. */
+  const userSelect = (selection: readonly CellRange[], activeCell: CellRef | null, event: Event) => {
+    if (!controlled.selection) store.setState({ selection, activeCell });
+    events.onSelectionChange?.({ selection, activeCell, event });
   };
 
   /** A declarative cell's display list at its column's current width. */
@@ -708,10 +793,79 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       const region = listOf(target.row, target.col, column).regions[target.region];
       region?.onClick?.({ row: target.row, col: target.col, column, event });
     },
+    isKeyTarget: (t) => mirror.isKeyTarget(t),
+    ownsFocus: (t) => mirror.owns(t),
+    focus: () => mirror.focus(),
+    controls: (cell) => mirror.controls(cell),
+    focusControl: (cell) => mirror.focusControl(cell),
+    announce: (m) => mirror.announce(m),
   };
-  surface.scroller.tabIndex = 0;
+  surface.scroller.tabIndex = -1;
   surface.scroller.style.outline = 'none';
+  const mirror: Mirror = createMirror({
+    element: surface.scroller,
+    layer: surface.domLayer,
+    store,
+    window: live,
+    text: (r, c) => accessibleText(r, c, store.getSnapshot().columns[c]!),
+    regions: (r, c) => listOf(r, c, store.getSnapshot().columns[c]!).regions,
+    bounds: cellBounds,
+    activate: (t, e) => host.activate(t, e),
+    select: (cell, event) => userSelect([rangeOf(cell, cell)], cell, event),
+    headerClick: (col, event) => events.onHeaderClick?.({ col, column: store.getSnapshot().columns[col]!, event }),
+    contextMenu: (cell, event) =>
+      events.onCellContextMenu?.({ ...cell, column: store.getSnapshot().columns[cell.col]!, event }),
+  });
+  mirror.setLabel(options.ariaLabel, options.ariaLabelledBy);
   const detachInteraction = attachInteraction(host);
+
+  // The browser's text size setting changes the root font size; a 1rem probe notices.
+  const remProbe = doc.createElement('div');
+  remProbe.style.cssText = 'position:absolute;width:1rem;height:0;visibility:hidden;';
+  surface.domLayer.append(remProbe);
+  const remObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+    const next = rootScale();
+    if (next !== scale) {
+      scale = next;
+      applyTheme();
+    }
+  });
+  remObserver?.observe(remProbe);
+
+  // ---- Search -----------------------------------------------------------------------------------
+
+  let search: { q: string; cs: boolean } | null = null;
+  let findToken = 0;
+  /** Matching visible cells as [row, col] pairs, rebuilt with the overlay. */
+  const matches: number[] = [];
+  const isMatch = (row: number, col: number, column: ColumnDef) => {
+    const t = textOf(row, col, column);
+    return search!.cs ? t.includes(search!.q) : t.toLowerCase().includes(search!.q);
+  };
+  const collectMatches = (s: GridState) => {
+    matches.length = 0;
+    if (!search) return;
+    const n = Math.min(vp.frozenColumns, s.columns.length);
+    const visit = (r: number) => {
+      for (let c = 0; c < n; c++) if (isMatch(r, c, s.columns[c]!)) matches.push(r, c);
+      for (let c = Math.max(vp.colStart, n); c < vp.colEnd; c++) if (isMatch(r, c, s.columns[c]!)) matches.push(r, c);
+    };
+    for (let r = 0; r < vp.frozenRows; r++) visit(r);
+    for (let r = Math.max(vp.rowStart, vp.frozenRows); r < vp.rowEnd; r++) visit(r);
+  };
+
+  /** The rectangle of the in-cell control with keyboard focus, in viewport CSS pixels. */
+  const focusRectOf = (s: GridState) => {
+    const t = s.focusTarget;
+    const column = t && s.columns[t.col];
+    if (!t || !column || t.row >= rows.count) return null;
+    const list = listOf(t.row, t.col, column);
+    const r = list.regions[t.region];
+    if (!r) return null;
+    const x = colX(t.col, offsets, vp) + resolved.cellPaddingX + r.x;
+    const y = rowY(t.row, rows, vp) + contentTop(list.height, rows.heightOf(t.row), resolved, variable !== null) + r.y;
+    return { x, y, w: r.w, h: r.h };
+  };
 
   const unsubscribe = store.subscribe((next, prev) => {
     if (
@@ -732,7 +886,8 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       next.selection !== prev.selection ||
       next.activeCell !== prev.activeCell ||
       next.hoverCell !== prev.hoverCell ||
-      next.focused !== prev.focused
+      next.focused !== prev.focused ||
+      next.focusTarget !== prev.focusTarget
     ) {
       scheduler.mark(Dirty.Overlay);
     }
@@ -824,24 +979,39 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       if (o.frozenColumns !== undefined) patch.frozenColumns = o.frozenColumns;
       if (o.frozenRows !== undefined) patch.frozenRows = o.frozenRows;
       if (o.rowSizing !== undefined) patch.rowSizing = o.rowSizing;
+      let themeChanged = false;
       if (o.theme && o.theme !== themePatch) {
         themePatch = o.theme;
-        patch.theme = mergeTheme(defaultTheme, o.theme);
+        themeChanged = true;
       }
+      if (o.respectUserPreferences !== undefined && o.respectUserPreferences !== prefs) {
+        prefs = o.respectUserPreferences;
+        themeChanged = true;
+      }
+      if (o.scaleWithRootFont !== undefined && o.scaleWithRootFont !== scaleFont) {
+        scaleFont = o.scaleWithRootFont;
+        themeChanged = true;
+      }
+      if (themeChanged) patch.theme = effectiveTheme();
+      if ('ariaLabel' in o || 'ariaLabelledBy' in o) mirror.setLabel(o.ariaLabel, o.ariaLabelledBy);
       store.setState(patch);
     },
     invalidate(o) {
       if (variable && o?.remeasure !== false) heightsStale = true;
       env.epoch++;
       scheduler.mark(Dirty.Base);
+      mirror.schedule();
     },
     invalidateCell(row, col) {
       addDirty(row, col);
+      mirror.schedule();
     },
     invalidateCells(cells, count = Math.floor(cells.length / 2)) {
       for (let i = 0; i < count; i++) addDirty(cells[i * 2]!, cells[i * 2 + 1]!);
+      mirror.schedule();
     },
     invalidateRows(start, end) {
+      mirror.schedule();
       if (end - start > MAX_DIRTY_AREAS) {
         if (variable) for (let r = Math.max(0, start); r < Math.min(end, variable.count); r++) variable.unset(r);
         scheduler.mark(Dirty.Base);
@@ -881,22 +1051,66 @@ export function createGrid(container: HTMLElement, options: GridOptions): Grid {
       const v = live();
       return { x: v.frozenWidth, y: v.bodyTop, width: Math.max(0, v.width - v.frozenWidth), height: Math.max(0, v.height - v.bodyTop) };
     },
-    getCellBounds(row, col) {
-      const s = store.getSnapshot();
-      if (row < 0 || row >= rows.count || col < 0 || col >= s.columns.length) return null;
-      const v = live();
-      return { x: colX(col, offsets, v), y: rowY(row, rows, v), width: offsets[col + 1]! - offsets[col]!, height: rows.heightOf(row) };
-    },
+    getCellBounds: cellBounds,
     copySelection,
     focus() {
-      surface.scroller.focus({ preventScroll: true });
+      mirror.focus();
     },
+    isKeyTarget: (t) => mirror.isKeyTarget(t),
+    setSearch(query, o) {
+      search = query ? { q: o?.caseSensitive ? query : query.toLowerCase(), cs: o?.caseSensitive === true } : null;
+      findToken++;
+      scheduler.mark(Dirty.Overlay);
+    },
+    findNext(o) {
+      const token = ++findToken;
+      const s0 = store.getSnapshot();
+      const cols = s0.columns.length;
+      const total = s0.rowCount * cols;
+      if (!search || total === 0) return Promise.resolve(null);
+      const back = o?.backwards === true;
+      const a = s0.activeCell;
+      const start = a ? a.row * cols + a.col : back ? 0 : -1;
+      let i = 1;
+      return new Promise((resolve) => {
+        const step = () => {
+          if (token !== findToken || destroyed || !search) return resolve(null);
+          const t0 = performance.now();
+          const columns = store.getSnapshot().columns;
+          while (i <= total) {
+            const idx = (((start + (back ? -i : i)) % total) + total) % total;
+            i++;
+            const row = Math.floor(idx / cols);
+            const col = idx % cols;
+            const column = columns[col];
+            if (column && isMatch(row, col, column)) {
+              const cell = { row, col };
+              userSelect([rangeOf(cell, cell)], cell, new Event('find'));
+              scrollToCell(row, col);
+              return resolve(cell);
+            }
+            if ((i & 1023) === 0 && performance.now() - t0 > 8) {
+              setTimeout(step, 0);
+              return;
+            }
+          }
+          resolve(null);
+        };
+        step();
+      });
+    },
+    announce: (m) => mirror.announce(m),
     flush() {
       scheduler.flush();
     },
     destroy() {
       destroyed = true;
+      findToken++;
       detachInteraction();
+      mirror.destroy();
+      remObserver?.disconnect();
+      contrastMQ?.removeEventListener?.('change', applyTheme);
+      forcedMQ?.removeEventListener?.('change', applyTheme);
       fonts?.removeEventListener('loadingdone', onFontsLoaded);
       if (idleHandle) cancelRic(idleHandle);
       clearTimeout(resyncTimer);

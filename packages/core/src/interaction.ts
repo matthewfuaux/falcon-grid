@@ -43,6 +43,16 @@ export interface InteractionHost {
   targetAt(row: number, col: number, x: number, y: number): { target: CellTarget; region: CellRegion } | null;
   /** Runs a region's click handler. */
   activate(target: CellTarget, event: Event): void;
+  /** The accessibility mirror's focus model (see `a11y.ts`). */
+  isKeyTarget(t: EventTarget | null): boolean;
+  /** The grid has focus when it is on the scroller or anywhere in the mirror. */
+  ownsFocus(t: EventTarget | null): boolean;
+  /** Focus the active cell's mirror element. */
+  focus(): void;
+  /** Interactive regions of a cell (region indexes). */
+  controls(cell: CellRef): number[];
+  focusControl(cell: CellRef): boolean;
+  announce(message: string): void;
 }
 
 /** Pointer travel before a header press becomes a column drag, in CSS pixels. */
@@ -58,6 +68,9 @@ type Mode =
   | { kind: 'reorder'; col: number; drop: number }
   /** A clickable cell region is held down. */
   | { kind: 'press'; target: CellTarget };
+
+/** Width change per Alt+Shift+Arrow press, in CSS pixels. */
+const KEY_RESIZE_STEP = 8;
 
 const NAV_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'Home', 'End']);
 
@@ -233,7 +246,7 @@ export function attachInteraction(host: InteractionHost): () => void {
     point(e);
     const hit = host.hitTest(lastX, lastY);
     if (hit.region === 'none') return;
-    el.focus({ preventScroll: true });
+    host.focus();
     if (e.button === 0 && hit.region === 'cell') {
       // Pressing a clickable region of a declarative cell: no selection, a click on release.
       const t = host.targetAt(hit.row, hit.col, lastX, lastY);
@@ -413,8 +426,43 @@ export function attachInteraction(host: InteractionHost): () => void {
 
   // ---- Keyboard -------------------------------------------------------------------------------
 
+  /** Keyboard access to what is otherwise pointer-only: resizing, moving and header actions. */
+  const columnKeys = (e: KeyboardEvent, active: CellRef): boolean => {
+    const s = store.getSnapshot();
+    const column = s.columns[active.col];
+    if (!column) return false;
+    const name = column.title ?? column.id;
+    const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+    if (horizontal && (e.ctrlKey || e.metaKey)) {
+      // Move the column.
+      const to = active.col + dir;
+      if (to < 0 || to >= s.columns.length || column.reorderable === false) return true;
+      host.moveColumn(active.col, to, e);
+      const next = { row: active.row, col: to };
+      select([rangeOf(next, next)], next, e);
+      host.scrollCellIntoView(next);
+      host.announce(`${name} moved to column ${to + 1} of ${s.columns.length}`);
+      return true;
+    }
+    if (horizontal) {
+      if (column.resizable === false) return true;
+      const width = clampWidth(column, column.width + dir * KEY_RESIZE_STEP);
+      if (width !== column.width) host.resizeColumn(active.col, width, e);
+      host.announce(`${name} ${width} pixels wide`);
+      return true;
+    }
+    if (e.code === 'KeyS') {
+      const event = new MouseEvent('click', { shiftKey: false });
+      host.events.onHeaderClick?.({ col: active.col, column, event });
+      return true;
+    }
+    return false;
+  };
+
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.target !== el || e.altKey) return;
+    if (!host.isKeyTarget(e.target)) return;
+    if (e.altKey && !e.shiftKey) return;
     if (mode.kind !== 'none') {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -432,6 +480,31 @@ export function attachInteraction(host: InteractionHost): () => void {
       col: vp.frozenColumns > 0 ? 0 : vp.colStart,
     };
     const last = s.selection[s.selection.length - 1] ?? rangeOf(active, active);
+
+    if (e.altKey) {
+      if (columnKeys(e, active)) e.preventDefault();
+      return;
+    }
+    if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') {
+      e.preventDefault();
+      const column = s.columns[active.col]!;
+      const b = (e.target as HTMLElement).getBoundingClientRect();
+      const event = new MouseEvent('contextmenu', { clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 });
+      host.events.onCellContextMenu?.({ row: active.row, col: active.col, column, event });
+      return;
+    }
+    if (!ctrl && !e.shiftKey && (e.key === 'Enter' || e.key === ' ')) {
+      // Into the cell's controls (Escape comes back). Space toggles a lone checkbox directly.
+      const controls = host.controls(active);
+      if (controls.length === 0) return;
+      e.preventDefault();
+      if (e.key === ' ') {
+        if (controls.length === 1) host.activate({ ...active, region: controls[0]! }, e);
+      } else {
+        host.focusControl(active);
+      }
+      return;
+    }
 
     if (ctrl && (e.key === 'a' || e.key === 'A')) {
       e.preventDefault();
@@ -475,7 +548,7 @@ export function attachInteraction(host: InteractionHost): () => void {
   };
 
   const onCopy = (e: ClipboardEvent) => {
-    if (doc.activeElement !== el || !e.clipboardData) return;
+    if (!host.ownsFocus(doc.activeElement) || !e.clipboardData) return;
     const data = host.copy();
     if (!data) return;
     e.clipboardData.setData('text/plain', data.text);
@@ -483,10 +556,15 @@ export function attachInteraction(host: InteractionHost): () => void {
     e.preventDefault();
   };
 
-  const onFocus = () => store.setState({ focused: true });
-  const onBlur = () => {
+  const onFocusIn = (e: FocusEvent) => {
+    // The scroller itself never keeps focus: it goes to the active cell's mirror element.
+    if (e.target === el) host.focus();
+    if (!store.getSnapshot().focused && host.ownsFocus(doc.activeElement)) store.setState({ focused: true });
+  };
+  const onFocusOut = (e: FocusEvent) => {
+    if (host.ownsFocus(e.relatedTarget)) return;
     if (mode.kind !== 'none') endDrag(new Event('blur'), false);
-    store.setState({ focused: false });
+    if (store.getSnapshot().focused) store.setState({ focused: false });
   };
 
   /** Events from DOM overlay content (an editor, a menu) are that content's, not the grid's. */
@@ -507,12 +585,12 @@ export function attachInteraction(host: InteractionHost): () => void {
     [el, 'contextmenu', own(onContextMenu)],
     [el, 'scroll', onScroll],
     [el, 'keydown', onKeyDown as EventListener],
-    [el, 'focus', onFocus],
-    [el, 'blur', onBlur],
+    [el, 'focusin', onFocusIn as EventListener],
+    [el, 'focusout', onFocusOut as EventListener],
     [doc, 'copy', onCopy as EventListener],
   ];
   for (const [t, type, fn] of listeners) t.addEventListener(type, fn, type === 'scroll' ? { passive: true } : undefined);
-  if (doc.activeElement === el) onFocus();
+  if (host.ownsFocus(doc.activeElement)) store.setState({ focused: true });
 
   return () => {
     if (autoScroll) win.cancelAnimationFrame(autoScroll);

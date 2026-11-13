@@ -19,14 +19,16 @@ export const defaultTheme: Theme = {
   headerHeight: 36,
   hoverBackground: 'rgba(31, 35, 40, 0.04)',
   selectionBackground: 'rgba(9, 105, 218, 0.12)',
-  selectionBorder: 'rgba(9, 105, 218, 0.6)',
+  selectionBorder: 'rgba(9, 105, 218, 0.8)',
   focusRing: '#0969da',
+  matchBackground: 'rgba(212, 167, 44, 0.4)',
   mutedForeground: '#59636e',
-  accent: '#0969da',
+  // Tones are dark enough for 4.5:1 on white and on the 14% tint behind badge labels.
+  accent: '#0860ca',
   accentForeground: '#ffffff',
-  success: '#1a7f37',
-  warning: '#9a6700',
-  danger: '#d1242f',
+  success: '#187733',
+  warning: '#8a5c00',
+  danger: '#c21d2a',
 };
 
 export function mergeTheme(base: Theme, patch: Partial<Theme> | undefined): Theme {
@@ -91,4 +93,71 @@ export function themeFromCSSVariables(
     }
   }
   return out as Partial<Theme>;
+}
+
+/** Applied under `prefers-contrast: more`: solid lines and stronger secondary colours. */
+export const highContrastTheme: Partial<Theme> = {
+  foreground: '#010409',
+  headerForeground: '#010409',
+  gridLine: '#59636e',
+  frozenDivider: '#010409',
+  mutedForeground: '#393f46',
+  selectionBackground: 'rgba(9, 105, 218, 0.2)',
+  selectionBorder: '#0550ae',
+  focusRing: '#0550ae',
+  accent: '#0550ae',
+  success: '#055d20',
+  warning: '#6c4400',
+  danger: '#a0111f',
+};
+
+/**
+ * Colours for `forced-colors: active` (Windows contrast themes), from the user's system
+ * colours. Canvas pixels are not adjusted by the browser, so the grid paints with them itself.
+ */
+export function forcedColorsTheme(doc: Document): Partial<Theme> {
+  const probe = doc.createElement('span');
+  probe.style.display = 'none';
+  doc.body.append(probe);
+  const sys = (name: string) => {
+    probe.style.color = name;
+    return getComputedStyle(probe).color;
+  };
+  const alpha = (rgb: string, a: number) => rgb.replace(/^rgba?\(([^,]+),([^,]+),([^,)]+).*$/, `rgba($1,$2,$3, ${a})`);
+  const canvas = sys('Canvas');
+  const text = sys('CanvasText');
+  const highlight = sys('Highlight');
+  const muted = sys('GrayText');
+  const link = sys('LinkText');
+  probe.remove();
+  return {
+    background: canvas,
+    foreground: text,
+    rowAltBackground: null,
+    headerBackground: canvas,
+    headerForeground: text,
+    gridLine: muted,
+    frozenDivider: text,
+    hoverBackground: 'transparent',
+    selectionBackground: alpha(highlight, 0.3),
+    selectionBorder: highlight,
+    focusRing: highlight,
+    matchBackground: alpha(highlight, 0.5),
+    mutedForeground: text,
+    accent: link,
+    accentForeground: canvas,
+    success: text,
+    warning: text,
+    danger: text,
+  };
+}
+
+const SCALED_KEYS = ['fontSize', 'cellPaddingX', 'cellPaddingY', 'lineHeight', 'rowHeight', 'headerHeight'] as const;
+
+/** Sizes scaled for a root font size other than 16px (the user's text size setting). */
+export function scaleTheme(theme: Theme, factor: number): Theme {
+  if (factor === 1) return theme;
+  const next = { ...theme };
+  for (const k of SCALED_KEYS) next[k] = Math.round(theme[k] * factor * 4) / 4;
+  return next;
 }

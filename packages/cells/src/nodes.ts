@@ -23,6 +23,11 @@ export interface Sizing {
 
 export interface Interactive {
   onClick?: (e: CellActionEvent) => void;
+  /**
+   * Accessible name when the primitive is clickable (it becomes a button, link or checkbox for
+   * screen readers). Default: its text, label, tooltip or icon name.
+   */
+  ariaLabel?: string;
   /** CSS cursor while hovered (default 'pointer' when there is an `onClick`). */
   cursor?: string;
 }
